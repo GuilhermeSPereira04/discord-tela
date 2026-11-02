@@ -1,0 +1,16 @@
+{
+  "name": "discord-bot-tela",
+  "version": "1.0.0",
+  "description": "Bot privado de Discord para gerar salas de compartilhamento de tela P2P via navegador (VDO.Ninja)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

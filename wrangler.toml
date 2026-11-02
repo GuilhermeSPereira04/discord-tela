@@ -1,0 +1,6 @@
+name = "tnc-canja-tela"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+[vars]
+DISCORD_PUBLIC_KEY = "8e45068f3cd1e86f40002cbe8de74a94cb44af4bd120ed79112df02f0dbd2e42"
