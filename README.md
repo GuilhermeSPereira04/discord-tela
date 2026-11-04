@@ -30,6 +30,14 @@ Abra os dois links com o mesmo identificador de sala:
 
 Para revisar o front sem uma transmissão, a tela local de espectador oferece os botões **Conectando** e **Conectado** (estado simulado). Também é possível abrir diretamente os estados com `&preview=waiting` ou `&preview=connected` no link de espectador. Essas prévias não abrem conexões PeerJS nem recebem mídia. O player simulado mantém os controles visíveis; **Miniatura** explica que precisa de vídeo real. Use **Sair da prévia** para voltar à conexão real.
 
+A entrada por apelido é uma tela própria que ocupa toda a página. Espera, PeerJS e controles do player só são ativados depois de continuar; o apelido permanece opcional. No menu local, **Entrar com apelido opcional** usa `preview=nickname` para sempre mostrar essa tela durante os ajustes, inclusive após um apelido ter sido lembrado.
+
+O fundo dessa entrada usa uma [multidão procedural em perspectiva](docs/nickname-crowd-study.md), como complemento visual da caminhada sob o vidro na tela de link expirado. A animação é decorativa, respeita movimento reduzido e é descartada ao entrar na transmissão.
+
+Antes de publicar, rode `npm test`, `npm run build` e `npm run production:check`. O último comando executa o artefato do dry-run no runtime local da Cloudflare: verifica links assinados/expirados, autorização, ping do Discord, imports e assets estáticos. Usa somente chaves de teste e não publica nem envia mensagens. O CI executa essas mesmas etapas com Node 22. Isso não substitui testar captura/P2P entre aparelhos e redes reais nem conferir os segredos do Worker publicado.
+
+Para abrir o menu local de revisão, execute `npm run preview` e acesse [Revisar as telas](http://127.0.0.1:8793/telas). Existe uma única tela **Transmitindo**, com os olhos neon aprovados, cinco participantes sintéticos e um controle para incluir áudio de teste. Preparação, entrada e estados do espectador continuam disponíveis. `npm run preview:check` confere as rotas e os assets com esse servidor ligado. Os mocks ficam em `scripts/preview.mjs`, fora da publicação. Na transmissão real, os olhos aparecem nas conexões reais, sem nomes ou espectadores inventados.
+
 O player reserva espaço para controles de 48 px, adapta a barra para retrato/paisagem e mantém o botão de saída dentro da raiz em tela cheia. Veja [arquitetura, referências e limites da validação mobile](docs/player-responsive.md). `npm test` verifica a seleção das APIs de tela cheia; o teste visual de interrupção está documentado no mesmo arquivo.
 
 Em tela cheia, clique/toque na imagem para ocultar a barra inferior e novamente para recuperá-la. Tab também recupera os controles. Voltar usa uma entrada temporária da própria sala para sair da tela cheia antes de navegar; sair pelo botão remove essa entrada. Veja [comportamento, testes e limites do mouse/celular](docs/player-immersive-controls.md).

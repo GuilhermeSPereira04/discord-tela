@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Telas · Colegas de Call</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#090909;color:#f4f4f1;font:15px/1.5 system-ui,sans-serif;display:grid;grid-template-columns:260px minmax(0,1fr);height:100dvh}aside{padding:32px 20px;overflow:auto}h1{font-size:24px;font-weight:500;margin:0 0 12px}p{color:#aaa;font-size:13px;margin:0 0 28px}nav{display:grid;gap:8px}a{color:inherit;text-decoration:none}nav a{padding:12px 14px;border-radius:10px;display:grid;gap:3px;transition:background .2s}nav a:hover{background:#202020}nav a[aria-current=true]{background:#292323}small{color:#aaa;font-size:12px}.note{margin-top:32px;font-size:12px;color:#999}.standalone{display:block;margin-top:24px;text-decoration:underline;text-underline-offset:4px}iframe{width:100%;height:100%;border:0;background:#090909}@media(max-width:700px){body{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}aside{padding:16px}h1{font-size:18px;margin:0 0 6px}aside>p,.note{display:none}nav{display:flex;overflow:auto;gap:6px}nav a{white-space:nowrap;padding:8px 12px}nav small{display:none}.standalone{margin-top:8px;font-size:12px}}
+</style>
+<aside>
+<h1>Revisar as telas.</h1>
+<p>Transmissão aprovada com olhos neon. As simulações são apenas locais.</p>
+<nav aria-label="Telas do projeto">
+<a target="tela" href="/?room=revisao-local&mode=host&title=Sala%20de%20teste">Preparar transmissão<small>Interface real · seleção manual</small></a>
+<a target="tela" aria-current="true" href="/?room=revisao-local&mode=host&title=Sala%20de%20teste&qa=live">Transmitindo<small>Olhos neon · visual aprovado</small></a>
+<a target="tela" href="/?room=revisao-local&mode=view&title=Sala%20de%20teste&preview=waiting">Espectador conectando<small>Prévia sem conexão</small></a>
+<a target="tela" href="/?room=revisao-local&mode=view&title=Sala%20de%20teste&preview=connected">Espectador conectado<small>Player simulado</small></a>
+<a target="tela" href="/?room=revisao-local&mode=view&title=Sala%20de%20teste&preview=nickname">Entrar com apelido opcional<small>Tela dedicada · pode continuar sem nome</small></a>
+<a target="tela" href="/link-invalido">Link inválido ou expirado<small>Novo estado do repositório original</small></a>
+</nav>
+<a class="standalone" id="standalone" href="/?room=revisao-local&mode=host&title=Sala%20de%20teste&qa=live">Abrir tela atual sem o menu ↗</a>
+<p class="note">Índice apenas local. As prévias não capturam sua tela. Na transmissão com áudio, a faixa é gerada para testar o indicador; o navegador pode exigir interação para emitir som.</p>
+</aside>
+<iframe name="tela" title="Tela selecionada" allow="display-capture; fullscreen; autoplay; picture-in-picture" allowfullscreen src="/?room=revisao-local&mode=host&title=Sala%20de%20teste&qa=live"></iframe>
+<script>
+document.querySelector('nav').addEventListener('click',event=>{const link=event.target.closest('a');if(!link)return;document.querySelectorAll('nav a').forEach(item=>item.removeAttribute('aria-current'));link.setAttribute('aria-current','true');document.getElementById('standalone').href=link.href;});
+</script>
+</html>

@@ -7,6 +7,9 @@ import { EventEmitter } from 'node:events';
 // Exercise the actual page script: repeated/stale PeerJS events must not invent
 // audience members or remove a different, still-current connection.
 const source = fs.readFileSync(new URL('../worker.js', import.meta.url), 'utf8');
+const renderer = vm.createContext();
+vm.runInContext(source.replace("import appStyles from './styles/generated/app.css';", 'const appStyles = "";')
+  .replace('export default {', 'globalThis.worker = {'), renderer);
 class Element extends EventTarget {
   constructor() {
     super(); this.style = {}; this.dataset = {}; this.hidden = false;
@@ -21,20 +24,28 @@ class Element extends EventTarget {
   setAttribute(name, value) { this.attributes[name] = value; }
   replaceChildren(...children) { this.children = children; }
   append(...children) { this.children.push(...children); }
+  querySelector() { return this.content ||= new Element(); }
+  querySelectorAll() { return [this.querySelector()]; }
+  showModal() { this.open = true; }
+  close() { this.open = false; }
+  remove() { this.removed = true; }
+  focus() { this.focused = true; }
 }
-function fixture(mode = 'host') {
+function fixture(mode = 'host', { fresh = false, nickname = '', storageBlocked = false, peerAvailable = true, preview = null } = {}) {
   const elements = new Map();
   const get = key => {
     if (!elements.has(key)) elements.set(key, new Element());
     return elements.get(key);
   };
   const document = new EventTarget();
-  Object.assign(document, { getElementById: get, querySelector: get, body: get('body'),
+  Object.assign(document, { getElementById: key => mode === 'view' && key === 'status-text' ? null : get(key),
+    querySelector: get, body: get('body'), head: get('head'),
     createTextNode: value => value, createElement: () => new Element() });
   class Peer extends EventEmitter {
     constructor() { super(); this.calls = []; this.connections = []; this.reconnects = 0; }
-    call(id, media) {
+    call(id, media, options) {
       const call = new EventEmitter();
+      call.options = options;
       call.peerConnection = new EventTarget();
       call.peerConnection.connectionState = 'new';
       call.senders = media.getTracks().map(track => ({
@@ -49,8 +60,11 @@ function fixture(mode = 'host') {
     }
     connect(id) {
       const conn = new EventEmitter(); conn.peer = id;
-      conn.send = value => { conn.sent = value; };
-      conn.close = () => { conn.closed = true; conn.emit('close'); };
+      conn.peerConnection = new EventTarget();
+      conn.open = false; conn.messages = [];
+      conn.on('open', () => { conn.open = true; });
+      conn.send = value => { conn.sent = value; conn.messages.push(value); };
+      conn.close = () => { conn.open = false; conn.closed = true; conn.emit('close'); };
       this.connections.push(conn); return conn;
     }
     reconnect() { this.reconnects++; }
@@ -59,18 +73,19 @@ function fixture(mode = 'host') {
   const track = { kind: 'video', stop() {} };
   const stream = { getTracks: () => [track], getVideoTracks: () => [track], getAudioTracks: () => [] };
   let copied;
-  const context = vm.createContext({ document, Peer, Event, URL, console,
-    window: { location: { href: 'https://example.invalid/?room=audience&mode=host&title=Call' } },
+  const storage = new Map(fresh ? [] : [['viewer-nickname:canja_v2_audience', nickname]]);
+  const sessionStorage = {
+    getItem(key) { if (storageBlocked) throw new Error('Storage blocked'); return storage.get(key) ?? null; },
+    setItem(key, value) { if (storageBlocked) throw new Error('Storage blocked'); storage.set(key, value); },
+  };
+  const context = vm.createContext({ document, Peer: peerAvailable ? Peer : undefined, Event, URL, console,
+    window: { sessionStorage, location: { href: 'https://example.invalid/?room=audience&mode=' + mode + '&title=Call' } },
     navigator: { mediaDevices: { getDisplayMedia: async () => stream }, clipboard: { writeText: async text => { copied = text; } } },
     setTimeout() {}, setInterval() { return 1; }, clearInterval() {} });
-  const script = source.match(/  <script>\r?\n([\s\S]*?)  <\/script>/)[1]
-    .replace('${JSON.stringify(safeRoom)}', '"audience"')
-    .replace('${JSON.stringify(safeMode)}', JSON.stringify(mode))
-    .replace('${JSON.stringify(inviteHref)}', '""')
-    .replace('${JSON.stringify(hostStatus)}', 'false')
-    .replace('${JSON.stringify(isPreview ? preview : null)}', 'null');
+  const html = renderer.renderModernApp('audience', mode, 'Call', preview, true);
+  const script = html.match(/  <script>\r?\n([\s\S]*?)  <\/script>/)[1];
   vm.runInContext(script, context);
-  return { get, run: value => vm.runInContext(value, context), get copied() { return copied; },
+  return { get, storage, run: value => vm.runInContext(value, context), providePeer() { context.Peer = Peer; }, get copied() { return copied; },
     connect(id = 'viewer') {
       const conn = new EventEmitter(); conn.peer = id;
       conn.close = () => conn.emit('close');
@@ -325,4 +340,199 @@ test('capture requests retain window audio preferences at the API option level',
   assert.equal(requested.systemAudio, 'include');
   assert.equal(requested.windowAudio, 'window');
   assert.equal(requested.audio.suppressLocalAudioPlayback, false);
+});
+
+test('first entry waits for an optional nickname and sends it before requesting media', () => {
+  const f = fixture('view', { fresh: true });
+  assert.equal(f.run('peer'), null);
+  assert.equal(f.get('nickname-dialog').open, undefined);
+  assert.equal(f.get('nickname-screen').hidden, false);
+  assert.equal(f.get('app-main').hidden, true);
+  assert.equal(f.get('body').classList.contains('is-connecting'), false);
+  f.get('viewer-nickname').value = '  Guilherme   🦊  ';
+  f.get('nickname-form').dispatchEvent(new Event('submit', { cancelable: true }));
+  assert.equal(f.get('nickname-dialog').open, false);
+  assert.equal(f.get('nickname-screen').hidden, true);
+  assert.equal(f.get('app-main').hidden, false);
+  assert.equal(f.storage.get('viewer-nickname:canja_v2_audience'), 'Guilherme 🦊');
+  f.run('peer').emit('open');
+  const conn = f.run('viewerDataConnection'); conn.emit('open');
+  assert.equal(conn.messages[0].type, 'VIEWER_PROFILE');
+  assert.equal(conn.messages[0].nickname, 'Guilherme 🦊');
+  assert.equal(conn.messages[1], 'REQUEST_STREAM');
+});
+
+test('skipping, blank submission and Escape all permit anonymous entry without storage', () => {
+  for (const action of ['skip', 'blank', 'escape']) {
+    const f = fixture('view', { fresh: true, storageBlocked: true });
+    if (action === 'skip') f.get('nickname-cancel').dispatchEvent(new Event('click'));
+    if (action === 'blank') {
+      f.get('viewer-nickname').value = '   ';
+      f.get('nickname-form').dispatchEvent(new Event('submit', { cancelable: true }));
+    }
+    if (action === 'escape') {
+      const escape = new Event('keydown', { cancelable: true });
+      Object.defineProperty(escape, 'key', { value: 'Escape' });
+      f.get('nickname-form').dispatchEvent(escape);
+    }
+    assert.ok(f.run('peer'));
+    assert.equal(f.run('viewerNickname'), '');
+  }
+});
+
+test('entry defers PeerJS until joining and a failed download can be retried without duplicate attempts', () => {
+  const f = fixture('view', { fresh: true, peerAvailable: false });
+  assert.equal(f.get('head').children.length, 0);
+  assert.equal(f.run('peer'), null);
+  f.get('nickname-cancel').dispatchEvent(new Event('click'));
+  assert.equal(f.get('head').children.length, 1);
+  assert.equal(f.get('nickname-screen').hidden, true);
+  f.run('initViewer()');
+  assert.equal(f.get('head').children.length, 1);
+  const failed = f.get('head').children[0];
+  failed.dispatchEvent(new Event('error'));
+  assert.equal(failed.removed, true);
+  assert.equal(f.get('card-btn').disabled, false);
+  assert.equal(f.get('card-btn').style.display, 'inline-flex');
+  assert.equal(f.get('body').classList.contains('is-connecting'), false);
+  f.get('card-btn').onclick();
+  assert.equal(f.get('head').children.length, 2);
+  f.providePeer();
+  f.get('head').children[1].dispatchEvent(new Event('load'));
+  assert.ok(f.run('peer'));
+  assert.equal(f.get('card-btn').style.display, 'none');
+});
+
+test('a remembered nickname skips the entry and starts the deferred script immediately', () => {
+  const f = fixture('view', { nickname: 'Ana', peerAvailable: false });
+  assert.equal(f.get('nickname-screen').hidden, true);
+  assert.equal(f.get('app-main').hidden, false);
+  assert.equal(f.get('head').children.length, 1);
+  f.providePeer();
+  f.get('head').children[0].dispatchEvent(new Event('load'));
+  assert.ok(f.run('peer'));
+});
+
+test('the local nickname preview stays available for layout review even with a remembered name', () => {
+  const f = fixture('view', { nickname: 'Ana', peerAvailable: false, preview: 'nickname' });
+  assert.equal(f.run('peer'), null);
+  assert.equal(f.get('head').children.length, 0);
+  assert.equal(f.get('nickname-screen').hidden, false);
+  assert.equal(f.get('app-main').hidden, true);
+});
+
+test('nicknames update existing calls as safe text, remain bounded and keep legacy viewers working', async () => {
+  const f = fixture(); await f.run('startHostStream()');
+  const conn = f.connect();
+  conn.emit('data', { type: 'VIEWER_PROFILE', nickname: '  Ana\nSilva\u202e  ' });
+  assert.equal(f.get('audience-list').children.length, 0);
+  conn.emit('data', 'REQUEST_STREAM');
+  assert.equal(f.get('audience-list').children[0].children[1].textContent, 'Ana Silva');
+  assert.equal(f.get('audience-list').children[0].children[0].hidden, true);
+  assert.equal(f.get('audience-identity').hidden, false);
+  conn.emit('data', { type: 'VIEWER_PROFILE', nickname: '<img src=x onerror=x>' });
+  assert.equal(f.get('audience-list').children[0].children[1].textContent, '<img src=x onerror=x>');
+  conn.emit('data', { type: 'VIEWER_PROFILE', nickname: '🦊'.repeat(100) });
+  assert.equal(Array.from(f.get('audience-list').children[0].children[1].textContent).length, 24);
+  assert.equal(f.run('peer').calls.length, 1);
+  conn.emit('data', { type: 'VIEWER_PROFILE', nickname: {} });
+  assert.equal(Array.from(f.get('audience-list').children[0].children[1].textContent).length, 24);
+  conn.emit('data', { type: 'VIEWER_PROFILE', nickname: '' });
+  assert.equal(f.get('audience-list').children[0].children[1].textContent, 'Espectador 01');
+  assert.equal(f.get('audience-identity').hidden, true);
+});
+
+test('editing, cancelling and clearing a nickname preserve media and resend the latest profile on reconnect', () => {
+  const f = fixture('view', { nickname: 'Ana' });
+  const peer = f.run('peer'); peer.emit('open');
+  const conn = f.run('viewerDataConnection'); conn.emit('open');
+  f.run('viewerConnected = true; showPlayer()');
+  f.get('edit-player-nickname').dispatchEvent(new Event('click'));
+  f.get('viewer-nickname').value = 'Não salvar';
+  f.get('nickname-cancel').dispatchEvent(new Event('click'));
+  assert.equal(f.run('viewerNickname'), 'Ana');
+  f.get('edit-player-nickname').dispatchEvent(new Event('click'));
+  f.get('viewer-nickname').value = 'Guilherme';
+  f.get('nickname-form').dispatchEvent(new Event('submit', { cancelable: true }));
+  assert.equal(conn.sent.nickname, 'Guilherme');
+  assert.equal(f.run('peer'), peer);
+  assert.equal(f.run('viewerConnected'), true);
+  conn.close();
+  f.run('connectToHost()');
+  const replacement = f.run('viewerDataConnection'); replacement.emit('open');
+  assert.equal(replacement.messages[0].nickname, 'Guilherme');
+  f.get('edit-waiting-nickname').dispatchEvent(new Event('click'));
+  f.get('viewer-nickname').value = '';
+  f.get('nickname-form').dispatchEvent(new Event('submit', { cancelable: true }));
+  assert.equal(replacement.sent.nickname, '');
+});
+
+test('obsolete data channels cannot rename a replacement and ending clears all nicknames', async () => {
+  const f = fixture(); await f.run('startHostStream()');
+  const old = f.connect(); old.emit('data', { type: 'VIEWER_PROFILE', nickname: 'Ana' });
+  old.emit('data', 'REQUEST_STREAM');
+  const current = f.connect();
+  current.emit('data', { type: 'VIEWER_PROFILE', nickname: 'Bia' });
+  old.emit('data', { type: 'VIEWER_PROFILE', nickname: 'Obsoleto' }); old.emit('close');
+  assert.equal(f.run('viewerNicknames.get("viewer")'), 'Bia');
+  f.run('stopHostStream()');
+  assert.equal(f.run('viewerNicknames.size'), 0);
+});
+
+// These settings come from upstream. UI integration must keep all three profiles
+// effective before capture and while existing spectators remain connected.
+test('quality choices control capture and existing senders without replacing media calls', async () => {
+  const f = fixture();
+  let requested;
+  const capture = f.run('navigator.mediaDevices.getDisplayMedia');
+  const stream = await capture();
+  const track = stream.getVideoTracks()[0];
+  track.contentHint = '';
+  track.applyConstraints = async value => { track.constraints = value; };
+  f.run('navigator.mediaDevices').getDisplayMedia = async options => { requested = options; return stream; };
+  await f.run('setQuality("light"); startHostStream()');
+  assert.equal(requested.video.width.ideal, 1280);
+  assert.equal(requested.video.frameRate.max, 30);
+  assert.equal(track.contentHint, 'motion');
+  f.connect().emit('data', 'REQUEST_STREAM');
+  const call = f.run('peer').calls[0];
+  assert.equal(call.senders[0].parameters.encodings[0].maxBitrate, 2500000);
+  assert.equal(call.senders[0].parameters.encodings[0].maxFramerate, 30);
+  assert.equal(call.senders[0].parameters.degradationPreference, 'balanced');
+  assert.equal(typeof call.options.sdpTransform, 'function');
+  await f.run('setQuality("fluid")');
+  assert.equal(track.constraints.height.ideal, 1080);
+  assert.equal(track.constraints.frameRate.max, 60);
+  assert.equal(call.senders[0].parameters.degradationPreference, 'maintain-framerate');
+  await f.run('setQuality("sharp")');
+  assert.equal(track.contentHint, 'detail');
+  assert.equal(call.senders[0].parameters.degradationPreference, 'maintain-resolution');
+  assert.equal(f.run('peer').calls.length, 1);
+});
+
+test('upstream bitrate limits follow the real audience and recover when viewers depart', async () => {
+  const f = fixture(); await f.run('startHostStream()');
+  const connections = [];
+  for (let i = 0; i < 4; i++) {
+    const conn = f.connect('viewer-' + i);
+    connections.push(conn); conn.emit('data', 'REQUEST_STREAM');
+    const expected = [8500000, 6000000, 4500000, 3500000][i];
+    assert.ok(f.run('peer').calls.every(call => call.senders[0].parameters.encodings[0].maxBitrate === expected));
+  }
+  connections[3].close();
+  assert.equal(f.run('peer').calls[0].senders[0].parameters.encodings[0].maxBitrate, 4500000);
+});
+
+test('failed P2P shows upstream network guidance and a recovered stream clears the blocked state', () => {
+  const f = fixture('view'); const peer = f.run('peer'); peer.emit('open');
+  const conn = f.run('viewerDataConnection');
+  conn.peerConnection.connectionState = 'failed';
+  conn.peerConnection.dispatchEvent(new Event('connectionstatechange'));
+  assert.equal(f.get('card-title').children.filter(child => typeof child === 'string').join(''), 'Não foi possível conectar');
+  assert.match(f.get('card-desc').textContent, /4G\/5G/);
+  const call = new EventEmitter(); call.answer = () => {};
+  f.get('screen-video').play = async () => {};
+  peer.emit('call', call); call.emit('stream', {});
+  assert.equal(f.run('networkBlocked'), false);
+  assert.equal(f.run('viewerConnected'), true);
 });

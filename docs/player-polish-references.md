@@ -43,7 +43,7 @@ O refinamento vem da consistência entre proporção, resposta e estado. A compa
 
 ### Controles estáveis
 
-`_player.scss` conserva a barra fora da área de corte do vídeo. O botão de tela cheia mede 8,5 rem na disposição horizontal; no layout estreito ele usa a coluna flexível existente. Os rótulos se sobrepõem em um grid, sem alterar a largura ao mudar para Voltar. O hit target não se move no hover ou na pressão.
+`_player.scss` conserva a barra fora da área de corte do vídeo. O botão de tela cheia mede 8,5 rem no desktop; desde a revisão de 04/11/2026 ele usa um alvo de 3 rem com ícone abaixo de 40 rem. Os rótulos do desktop se sobrepõem em um grid, sem alterar a largura ao mudar para Voltar. O hit target não se move no hover ou na pressão.
 
 Os cantos do SVG giram em torno dos próprios centros ao mudar para tela cheia. No hover suportado, cada canto se desloca uma unidade para fora. Ondas e sinal de silêncio usam opacidade/transform; não existe animação contínua sugerindo atividade de áudio fictícia. A pseudo-superfície do botão responde ao toque sem cortar seu contorno de foco.
 
@@ -105,7 +105,7 @@ A trilha, seu preenchimento e o marcador são decorativos, com `aria-hidden` e s
 
 Durante o arraste, o delta de volume inclina o marcador até 12 graus; ao soltar, ele retorna usando um easing com pequeno overshoot. `pointerup`, cancelamento, perda de captura, blur do input e blur da janela limpam o estado. Não há captura customizada ou `preventDefault` interferindo na seleção nativa. O gesto por teclado mantém seu comportamento padrão e o foco visível.
 
-Em retrato abaixo de 28 rem de largura, o áudio passa a ocupar uma linha própria. Esse espaço já está reservado antes da interação. Em 390×844, a barra passou de aproximadamente 48 px na revisão anterior para 300 px, sem reposicionar controles ao arrastar. Em paisagem, continua compartilhando a linha quando há espaço.
+Na revisão anterior, em retrato abaixo de 28 rem, o áudio ocupava uma linha própria e o range crescia até aproximadamente 300 px em 390×844. Esse comportamento foi substituído na revisão de proporção de 04/11/2026 descrita ao final deste documento. As medições abaixo registram a versão anterior.
 
 ### Validação desta passagem
 
@@ -122,3 +122,94 @@ Esses testes verificam interação e propriedades do elemento de mídia na prév
 O range passou a `step="0.01"` (1%). O percentual conserva a cor neutra do texto também durante o arraste. A leitura visual acomoda mudanças em 90 ms, definidos por `--duration-volume-number`; volume, posição do marcador e texto acessível continuam imediatos. Existe no máximo um callback de animação pendente: ele muda de destino durante o gesto e para ao concluir, sem criar filas de contadores. Movimento reduzido exibe o valor diretamente.
 
 Conferidos no navegador: 1% e 2% pelo teclado e 37% pelo arraste, com valor final e leitura acessível coincidentes. A alteração não muda o desenho nem as dimensões dos controles.
+
+## Revisão de proporção do volume — 04/11/2026
+
+Registro da primeira passagem. A distribuição de largura fixa desta seção foi substituída pelo volume expansível descrito ao final.
+
+### 1. Performance e viabilidade
+
+O ajuste altera CSS e acrescenta um SVG inline de miniatura. Não acrescenta dependência, requisição, filtro, textura, draw call WebGL ou trabalho JavaScript contínuo. Mantém o mesmo range nativo e os eventos existentes de volume, mute, PiP e tela cheia. Não foi medido FPS ou consumo no aparelho. Safari/iPhone pode restringir o volume programático; esta revisão de layout não resolve nem demonstra essa compatibilidade.
+
+### 2. Referências e contexto
+
+- [Media Chrome — volume range](https://www.media-chrome.org/docs/en/components/media-volume-range): exemplo oficial com mute e volume adjacentes; também documenta indisponibilidade de ajuste em alguns dispositivos.
+- [Media Chrome — responsive controls](https://www.media-chrome.org/docs/en/responsive-controls): adaptar os controles à área disponível do player. Aproveitamos o princípio de compactação; não incorporamos o componente ou uma biblioteca.
+- [Codrops — Responsive & Touch-Friendly Audio Player](https://tympanus.net/codrops/2012/12/04/responsive-touch-friendly-audio-player/): referência histórica de agrupamento do áudio e dimensões distintas para controles pequenos e trilha flexível. É de 2012; não usamos seu jQuery, plugin ou conclusões antigas de compatibilidade como padrão atual.
+- [W3C — Slider Pattern](https://www.w3.org/WAI/ARIA/apg/patterns/slider/): preservar controle de intervalo, nome acessível e operação por teclado. O percentual e o estado mudo continuam sincronizados pelo código existente.
+
+Não há atribuição de prêmio ou de uma solução específica de volume ao Awwwards. A busca complementar no Mobbin foi recusada por exigir plano pago; nenhuma tela não observada foi usada como evidência.
+
+### 3. Causa e arquitetura
+
+Havia três regras concorrentes: duas em áudio/player abaixo de 24/28 rem e uma em nickname até 36 rem. Elas esticavam o range para toda a largura, criavam outra linha e faziam a prévia divergir da transmissão real.
+
+`_player.scss` agora governa a distribuição. O conjunto de áudio tem base discreta sem borda, botão de 48 px e trilha de até 7 rem (112 px com fonte raiz de 16 px). A trilha pode ceder até 4 rem quando há três ações no telefone. No desktop, a unidade inteira mede até 10,75 rem; no compacto, até 10,5 rem. Esses tamanhos são decisões do projeto, não valores prescritos pelas referências.
+
+Abaixo de 40 rem, miniatura e tela cheia usam ícones com nomes acessíveis existentes e alvos de 48×48 px; o lápis opcional conserva o mesmo tamanho. Abaixo de 20 rem, a grade permite outra linha sem comprimir os alvos. Nenhuma largura muda durante hover, foco ou arraste. `_audio.scss` mantém apenas a aparência/interação do range; `_nickname.scss` não governa mais a geometria da barra.
+
+### 4. Validação e limite
+
+A compilação e os testes existentes verificam integração e contratos funcionais, não demonstram a distribuição CSS no aparelho. A inspeção do código conferiu os limites de tamanho e a manutenção de `input[type=range]`, `aria-valuetext`, nomes dos botões e alvos de 48 px. Não houve nova tela ou opção de teste no índice local.
+
+O acesso ao navegador local está desativado nas configurações do Work. A revisão visual renderizada desta alteração e o gesto em Android/iOS físico permanecem pendentes; as capturas e medições de seções anteriores pertencem às revisões anteriores.
+
+## Volume expansível — 04/11/2026
+
+### 1. Performance e viabilidade
+
+O mesmo input nativo atende às duas disposições. O controle usa eventos de ponteiro/foco e uma media query observável; não acrescenta biblioteca, polling, draw calls, textura ou animação contínua. A revelação anima opacidade; a caixa horizontal recebe sua largura final imediatamente para não redimensionar o hit target sob o arraste. O painel vertical fica dentro da raiz de tela cheia, sobre a imagem, sem acrescentar altura à barra. O custo visual é limitado ao painel e seus ícones; não há medição nova de FPS ou prova de compatibilidade física.
+
+### 2. Referências
+
+- O usuário pediu a interação de revelação horizontal associada ao YouTube. O [tema YT do Player.style](https://player.style/themes/yt) é uma referência pública de contexto, não uma auditoria do código atual do YouTube. A implementação local conserva os próprios estilos e controles.
+- [MDN — Creating vertical form controls](https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Writing_modes/Vertical_controls): o input usa `writing-mode: vertical-lr` e `direction: rtl`, com máximo no topo. Não se roda um hit target horizontal com `transform`.
+- [MDN — inert](https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/inert): o range fechado e o mute dentro do painel mobile ficam fora da interação e do percurso de foco. O gatilho comunica `aria-expanded`/`aria-controls`; a orientação do slider acompanha a disposição.
+
+### 3. Arquitetura e interação
+
+`attachVolumeDisclosure` em `public/player-controls.mjs` governa apenas abertura/foco. O código existente continua ligando volume e mute ao vídeo real. No desktop, hover ou foco no áudio abre o range horizontal; clicar no speaker continua alternando mute. O arraste conserva a abertura até liberar/cancelar. Teclado também pode chegar ao range pela sequência Tab ou pelas setas no botão de mute.
+
+Abaixo de 40 rem, ou em apontador primário sem hover/grosso, o ícone é um gatilho explícito. Ele abre uma trilha vertical e um botão de mute separado dentro do painel. Abrir não altera o som. O slider tem largura de toque de 48 px e comprimento entre 4 e 9 rem, limitado pela altura do viewport para paisagem baixa. O percentual fica acima da trilha; o ícone fechado acompanha o volume e o silêncio reais.
+
+Tocar fora, sair com o foco ou perder a janela fecha o painel. Escape é interceptado quando o painel está aberto para fechar primeiro esse controle e devolver o foco ao ícone; isso não promete impedir saídas de tela cheia impostas pelo navegador. Mudanças de media query também atualizam foco/orientação. Ocultar o chrome de tela cheia fecha o volume. Não há novos links, estados de prévia ou controles duplicados de ganho: o botão adicional é apenas o gatilho mobile.
+
+### 4. Validação
+
+Cinco testes de eventos verificam abertura sem mute acidental, Escape/foco, fechamento externo, arraste e cancelamento fora da área, uso por teclado, mudança de modo e fechamento ao perder a janela/ocultar o chrome. Eles não emulam a geometria nativa do slider. A compilação Sass/Worker e os 65 testes da suíte completa passaram nesta atualização.
+
+O navegador local continua desativado no Work. Revisão visual renderizada, gesto real em celular e limites de volume no Safari/iPhone permanecem pendentes. A prévia conectada continua simulada e sem áudio real.
+
+## Superfície líquida em WebGL 2 — 04/11/2026
+
+Implementação experimental autorizada após a análise de viabilidade. Substitui a pele visual do volume na mesma tela, sem acrescentar uma entrada ao índice de prévias.
+
+### 1. Performance e viabilidade
+
+`public/liquid-volume.mjs` usa um contexto WebGL 2 criado somente na primeira abertura, um triângulo e uma chamada de desenho por quadro necessário. Fundo, trilha, preenchimento, marcador e reflexo são calculados no fragment shader; não há textura, upload do vídeo, pós-processamento, blur ou simulação de fluidos em framebuffer. O material é uma iluminação analítica, não refração real do vídeo.
+
+O DPR é limitado a 2. No desktop com fonte raiz de 16 px, o canvas mede 196×72 CSS px, com buffer máximo de 392×144: 56.448 pixels e cerca de 0,22 MiB por superfície RGBA8, antes de buffers do compositor e custo do contexto. Esse cálculo não é medição de memória total. Em vertical a altura acompanha o painel existente.
+
+As molas usam tempo decorrido e encerram o RAF ao atingir repouso. Fechamento chega a zero; aba oculta, elemento fora de vista e movimento reduzido interrompem a animação. Geometria é medida na abertura/resize, não em cada frame da mola. Não há afirmação de 60 fps em hardware médio: o shader foi renderizado em uma RTX 4070 Laptop, sem transmissão real concorrente.
+
+### 2. Referências e adaptação
+
+- [Codrops — Elastic SVG Elements](https://tympanus.net/codrops/2014/12/15/elastic-svg-elements/): deformação de forma e acomodação ligadas à interação. Aproveita-se o raciocínio; não se incorporam Snap.svg ou seus exemplos.
+- [The Book of Shaders — Shapes](https://thebookofshaders.com/07/): campos de distância, bordas suavizadas e composição de formas. O shader local une cápsula, elipse e cauda por uma união suave polinomial.
+- [MDN — WebGL best practices](https://developer.mozilla.org/en-US/docs/Web/API/WebGL_API/WebGL_best_practices): buffer pequeno, alocação conservadora, limpeza e perda de contexto. A implementação usa alpha e dispensa buffers de profundidade/stencil.
+- [Moxey — estudo do autor no Codrops](https://tympanus.net/codrops/2024/11/15/developing-moxey-a-behind-the-scenes-look-at-the-process/): referência de integração do player à direção visual e resposta dos controles ao ponteiro. Não é evidência de que Moxey use este shader ou este volume.
+
+### 3. Contratos de arquitetura
+
+O canvas é decorativo (`aria-hidden`, sem ponteiro) e está dentro da raiz de tela cheia. O input nativo, seus limites, teclado, orientação vertical, foco e captura de arraste continuam responsáveis pela interação. `video.volume` e `video.muted` continuam nos handlers originais; o renderer não altera mídia ou valor do input.
+
+A posição central é imediata. O delta de volume impulsiona apenas a deformação do marcador; a pressão engrossa o corpo e a cauda acomoda com amortecimento. O reflexo usa o gradiente local do campo de distância. A superfície de hover se alonga visualmente enquanto a área do input já está na largura final.
+
+A pele CSS continua funcional sem WebGL, durante perda de contexto ou com movimento reduzido. O canvas só substitui trilha/marcador/fundo depois do primeiro desenho válido. Restauração de contexto recria recursos. Descarte remove listeners, observers e programa; página em bfcache pausa e pode retomar.
+
+### 4. Verificação
+
+- Testes novos verificam criação tardia, um contexto reutilizado, resolução limitada, encerramento do RAF, valor imediato, ausência de medidas por frame de mola, fallback, orientação, visibilidade, restauração e descarte.
+- O harness local `.wrangler/render-liquid-volume.py` compilou o GLSL real em OpenGL 3.3 desktop e gerou `.wrangler/liquid-volume-gpu.png`, com posições e deformações horizontais/verticais. Somente a declaração de versão/precisão foi adaptada para esse teste. Isso verifica a imagem e as equações, não a compatibilidade WebGL do navegador.
+- `npm run build`, os 70 testes da suíte e `git diff --check` passaram. O inventário de ferramentas confirmou novamente que o acesso ao navegador local está desativado no Work.
+- Revisão do layout DOM, arraste físico, Safari/iPhone e desempenho junto de WebRTC continuam separados desse resultado. O shader não elimina restrições do sistema sobre volume programático.

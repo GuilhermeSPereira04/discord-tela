@@ -1,0 +1,11 @@
+.host-audience:has(.has-audience-eyes) { position: relative; }
+.audience-list.has-audience-eyes {
+  gap: clamp(1.25rem, 3vh, 2rem);
+  > li { grid-template-columns: 68px minmax(0, 1fr) auto; grid-template-rows: auto; align-items: center; gap: 0 .875rem; }
+  .audience-marker { position: relative; display: block; grid-column: 1; grid-row: 1; inline-size: 68px; block-size: 32px; }
+  .audience-eyes-static, .audience-eyes-static svg { display: block; position: absolute; inset: 0; inline-size: 100%; block-size: 100%; }
+  .audience-name { grid-column: 2; grid-row: 1; align-self: center; }
+  .audience-state { grid-column: 3; grid-row: 1; align-self: center; }
+  &[data-eyes-renderer='webgl2'] .audience-eyes-static { visibility: hidden; }
+}
+.audience-eyes-layer { position: absolute; z-index: 1; pointer-events: none; }

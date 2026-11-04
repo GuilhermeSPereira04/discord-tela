@@ -48,9 +48,10 @@
   padding: 0;
   &:not(:empty) { margin-block-start: var(--space-5); }
   li { display: grid; grid-template-columns: 2rem 1fr auto; align-items: center; gap: var(--space-3); }
+  li[data-named='true'] { grid-template-columns: minmax(0, 1fr) auto; }
 }
 .audience-marker { color: var(--color-connection-violet-light); font-size: var(--text-small); font-variant-numeric: tabular-nums; }
-.audience-name { font-size: var(--text-label); }
+.audience-name { min-inline-size: 0; overflow-wrap: anywhere; font-size: var(--text-label); }
 .audience-state, .audience-caption { color: var(--color-muted); font-size: var(--text-small); line-height: 1.5; }
 .audience-caption { margin-block-start: var(--space-3); }
 .host-invite { margin-block-start: var(--space-4); }
@@ -194,6 +195,20 @@
   legend { padding: 0; margin-block-end: var(--space-3); font-size: var(--text-label); font-weight: var(--weight-medium); }
 }
 .quality-options { display: grid; gap: var(--space-2); }
+// Keep upstream's quality choice available before capture without exposing
+// the live audience panel in the opening screen.
+.host:not(.player-active) .host-audience {
+  display: block;
+  inline-size: min(calc(100% - 2 * var(--page-gutter)), 80rem);
+  margin: 0 auto;
+  padding-block-end: max(var(--space-7), env(safe-area-inset-bottom));
+  > :not(.host-quality) { display: none; }
+  .host-quality { margin: 0; }
+  .quality-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  @include m.below('compact') {
+    .quality-options { grid-template-columns: minmax(0, 1fr); }
+  }
+}
 .quality-option {
   @include m.target;
   position: relative;

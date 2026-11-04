@@ -99,9 +99,11 @@ async function verifyRoomLink(secret, params, graceSeconds = 0) {
 
 function invalidLinkPage() {
   return new Response(
-    '<!DOCTYPE html><html lang="pt-BR"><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Link expirado</title>' +
-    '<body style="font-family:system-ui,sans-serif;background:#0b0b0f;color:#eee;display:grid;place-items:center;min-height:100vh;margin:0;text-align:center;padding:16px">' +
-    '<div><h1 style="font-weight:500">Link expirado ou inválido</h1><p>Use <strong>/tela</strong> no Discord para criar uma nova sala.</p></div></body></html>',
+    `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Link expirado</title><style>${appStyles}</style></head>
+    <body class="expired-page"><canvas id="expired-walkers" class="expired-walkers" aria-hidden="true"></canvas>
+    <main class="expired-message"><h1>Link expirado ou inválido</h1><p>Use <strong>/tela</strong> no Discord para criar uma nova sala.</p></main>
+    <script type="module">import { attachExpiredWalkers } from '/expired-walkers.mjs'; attachExpiredWalkers(document.getElementById('expired-walkers'),document.querySelector('.expired-message'));</script>
+    </body></html>`,
     { status: 403, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
   );
 }
@@ -251,7 +253,9 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
   const safeMode = mode === 'host' ? 'host' : 'view';
   const safeTitle = (title || 'Sala de Tela').replace(/[<>"]/g, '');
   // Prévia visual determinística: permite revisar os estados sem capturar ou receber mídia.
-  const isPreview = safeMode === 'view' && ['waiting', 'connected'].includes(preview);
+  const isPreview = localPreviewEnabled && safeMode === 'view' && ['waiting', 'connected'].includes(preview);
+  const hasNicknameEntry = safeMode === 'view' && !isPreview;
+  const isNicknamePreview = localPreviewEnabled && safeMode === 'view' && preview === 'nickname';
   const showPreviewNav = safeMode === 'view' && (localPreviewEnabled || isPreview);
 
   return `<!DOCTYPE html>
@@ -262,12 +266,12 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
   <title>${safeTitle} • Colegas de Call</title>
   <link rel="preload" href="/fonts/instrument-sans-latin-v4.woff2" as="font" type="font/woff2" crossorigin>
   ${safeMode === 'host' ? '<link rel="license" href="/diorama/credits.txt" title="Diorama: autoria e licenças">' : ''}
-  ${isPreview ? '' : '<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>'}
+  ${safeMode === 'host' ? '<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>' : ''}
   <style>${appStyles}</style>
 </head>
-<body class="${safeMode === 'view' ? 'viewer' : 'host'} ${isPreview ? 'viewer-preview' : ''}">
+<body class="${safeMode === 'view' ? 'viewer' : 'host'} ${isPreview ? 'viewer-preview' : ''} ${hasNicknameEntry ? 'nickname-entry-active' : ''}">
   ${safeMode === 'host' ? '<div class="host-workspace">' : ''}
-  <main>
+  <main id="app-main" ${hasNicknameEntry ? 'hidden' : ''}>
     <!-- Card Inicial -->
     <div id="state-card" class="state-card">
       <div class="state-icon" id="card-icon" aria-hidden="true">${safeMode === 'host' ? '<div id="host-diorama" class="host-diorama" data-state="loading"><img data-src="/diorama/poster.jpg" width="224" height="224" alt="" decoding="async"></div>' : CONNECTION_SYMBOL}</div>
@@ -275,6 +279,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       <p id="card-desc">Preparando conexão P2P direta.</p>
       <button id="card-btn" class="btn full player-control motion-button" data-button-motion data-click-particles="true" data-fill-state="idle" type="button" style="display:none"><span class="player-control-content">Selecionar tela</span></button>
       ${safeMode === 'host' ? '<p id="host-feedback" class="host-feedback" role="status" hidden></p>' : ''}
+      ${safeMode === 'view' && !isPreview ? '<button id="edit-waiting-nickname" class="nickname-edit" type="button" hidden>Alterar apelido</button>' : ''}
     </div>
 
     ${safeMode === 'host' ? `<div id="host-actions" class="host-capture-panel" hidden>
@@ -357,13 +362,19 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       </div>
       <div id="player-controls" class="controls-bar" role="group" aria-label="Controles da transmissão">
         <div class="player-audio">
+          <button id="volume-toggle" class="player-control volume-toggle" type="button" aria-label="Ajustar volume" aria-expanded="false" aria-controls="volume-panel">
+            <span class="player-control-content"><svg class="audio-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="audio-speaker" d="M10 5 5 9H2v6h3l5 4V5Z"/><path class="audio-wave audio-wave--near" pathLength="1" d="M14 8a6 6 0 0 1 0 8"/><path class="audio-wave audio-wave--far" pathLength="1" d="M18 5a10 10 0 0 1 0 14"/><path class="audio-slash" pathLength="1" d="m15 9 6 6m0-6-6 6"/></svg></span>
+          </button>
+          <div id="volume-panel" class="volume-panel" role="group" aria-label="Volume da transmissão">
           <button id="mute-btn" class="player-control" aria-label="Silenciar" aria-pressed="false" title="Silenciar">
             <span class="player-control-content"><svg class="audio-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="audio-speaker" d="M10 5 5 9H2v6h3l5 4V5Z"/><path class="audio-wave audio-wave--near" pathLength="1" d="M14 8a6 6 0 0 1 0 8"/><path class="audio-wave audio-wave--far" pathLength="1" d="M18 5a10 10 0 0 1 0 14"/><path class="audio-slash" pathLength="1" d="m15 9 6 6m0-6-6 6"/></svg></span>
           </button>
           <div class="volume-control"><input id="vol-slider" aria-label="Volume" type="range" min="0" max="1" step="0.01" value="1" /><span class="volume-rail" aria-hidden="true"><span class="volume-fill"></span></span><span class="volume-handle" aria-hidden="true"></span><output id="volume-value" for="vol-slider" aria-hidden="true">100%</output></div>
+          </div>
         </div>
         <div class="player-actions">
-          <button id="pip-btn" class="player-control" data-fill-state="idle" aria-pressed="false" aria-describedby="pip-description"><span class="pip-border" aria-hidden="true"></span><span class="player-control-content">Miniatura</span></button>
+          ${safeMode === 'view' && !isPreview ? '<button id="edit-player-nickname" class="player-control" type="button" aria-label="Alterar apelido" title="Alterar apelido"><span class="player-control-content"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15l-1 6Z"/></svg></span></button>' : ''}
+          <button id="pip-btn" class="player-control" data-fill-state="idle" aria-label="Abrir miniatura" aria-pressed="false" aria-describedby="pip-description"><span class="pip-border" aria-hidden="true"></span><span class="player-control-content"><svg class="pip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 11h6v6h-6z"/></svg><span class="player-control-label">Miniatura</span></span></button>
           <span id="pip-description" class="visually-hidden">Abre o vídeo em uma janela flutuante.</span>
           <button id="fullscreen-btn" class="player-control player-control--primary motion-button" data-fill-state="idle" aria-label="Entrar em tela cheia" aria-pressed="false">
             <span class="player-control-content"><svg class="fullscreen-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g class="fullscreen-corner corner-tl"><path d="M8 3H3v5"/></g><g class="fullscreen-corner corner-tr"><path d="M16 3h5v5"/></g><g class="fullscreen-corner corner-bl"><path d="M3 16v5h5"/></g><g class="fullscreen-corner corner-br"><path d="M21 16v5h-5"/></g></svg>
@@ -378,7 +389,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
     <div class="audience-heading"><h2 id="audience-title">Quem está na sala</h2><span id="viewer-count" class="audience-count" role="status" aria-live="polite" aria-label="0 espectadores na sala">0</span></div>
     <div id="audience-empty" class="audience-empty"><p>Ninguém conectado ainda.</p><span>Envie o link para quem vai assistir.</span></div>
     <ul id="audience-list" class="audience-list" aria-label="Espectadores conectados"></ul>
-    <p id="audience-identity" class="audience-caption" hidden>Os nomes não são informados pelo link de acesso.</p>
+    <p id="audience-identity" class="audience-caption" hidden>Apelidos escolhidos por quem assiste.</p>
     <div class="host-invite"><button id="copy-view-link" class="host-copy-link motion-button" data-button-motion type="button"><span class="button-motion-content"><svg class="host-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2"/></svg>Copiar link de convite</span></button><p id="copy-feedback" class="audience-caption" role="status" hidden></p><input id="view-link-fallback" class="view-link-fallback" aria-label="Link para assistir" readonly hidden></div>
     <fieldset class="host-quality">
       <legend>Prioridade da imagem</legend>
@@ -396,12 +407,29 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
     ${isPreview ? '<a id="exit-preview" class="motion-link" href="#"><span class="motion-label"><span class="motion-track"><span>Sair da prévia</span><span aria-hidden="true">Sair da prévia</span></span></span></a>' : ''}
   </nav>` : ''}
 
+  ${hasNicknameEntry ? `<main id="nickname-screen" class="nickname-screen">
+    <canvas id="nickname-crowd" class="nickname-crowd" aria-hidden="true"></canvas>
+    <form id="nickname-form" class="nickname-form" aria-labelledby="nickname-title" aria-describedby="nickname-description">
+      <h1 id="nickname-title">Como quer aparecer?</h1>
+      <p id="nickname-description">Escolha um apelido para quem transmite reconhecer você. É opcional.</p>
+      <label for="viewer-nickname">Seu apelido <span>(opcional)</span></label>
+      <input id="viewer-nickname" name="nickname" type="text" maxlength="24" autocomplete="nickname" spellcheck="false" aria-describedby="nickname-hint" autofocus>
+      <p id="nickname-hint" class="nickname-hint">Até 24 caracteres. Deixe em branco para continuar sem apelido.</p>
+      <div class="nickname-actions">
+        <button id="nickname-submit" class="btn player-control motion-button" data-button-motion type="submit"><span class="player-control-content">Assistir transmissão</span></button>
+        <button id="nickname-cancel" class="nickname-edit" type="button">Continuar sem apelido</button>
+      </div>
+    </form>
+  </main>
+  <dialog id="nickname-dialog" class="nickname-dialog" aria-labelledby="nickname-title" aria-describedby="nickname-description"></dialog>` : ''}
+
   <script>
     const ROOM_ID = "canja_v2_" + ${JSON.stringify(safeRoom)};
     const MODE = ${JSON.stringify(safeMode)};
     const INVITE_HREF = ${JSON.stringify(inviteHref)};
     const HOST_STATUS = ${JSON.stringify(hostStatus)};
     const PREVIEW = ${JSON.stringify(isPreview ? preview : null)};
+    const NICKNAME_PREVIEW = ${JSON.stringify(isNicknamePreview)};
 
     function openViewerPreview(state) {
       const url = new URL(window.location.href);
@@ -440,6 +468,10 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
     let activeCalls = new Map();
     const hostConnections = new Map();
     const viewerNumbers = new Map();
+    const viewerNicknames = new Map();
+    let viewerNickname = '';
+    let viewerJoined = false;
+    let viewerScriptLoading = false;
     let viewerSequence = 0;
     let captureGeneration = 0;
     let retryTimer = null;
@@ -492,6 +524,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
     }
 
     function setLiveStatus(isLive, text) {
+      if (!statusText) return;
       statusText.textContent = text;
       statusText.classList.toggle('live', isLive);
       statusText.dispatchEvent(new Event('hostlivestatuschange'));
@@ -525,7 +558,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       viewerCountEl.textContent = String(count);
       viewerCountEl.setAttribute('aria-label', count + (count === 1 ? ' espectador na sala' : ' espectadores na sala'));
       audienceEmpty.hidden = count > 0;
-      audienceIdentity.hidden = count === 0;
+      audienceIdentity.hidden = !Array.from(activeCalls.keys()).some(id => viewerNicknames.get(id));
       audienceList.replaceChildren(...Array.from(activeCalls, ([id, call]) => {
         if (!viewerNumbers.has(id)) viewerNumbers.set(id, ++viewerSequence);
         const row = document.createElement('li');
@@ -534,9 +567,13 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
         marker.className = 'audience-marker';
         marker.textContent = number;
         marker.setAttribute('aria-hidden', 'true');
+        const nickname = viewerNicknames.get(id);
+        marker.hidden = Boolean(nickname);
+        row.dataset.named = String(Boolean(nickname));
         const name = document.createElement('span');
         name.className = 'audience-name';
-        name.textContent = 'Espectador ' + number;
+        name.textContent = nickname || 'Espectador ' + number;
+        name.dir = 'auto';
         const state = document.createElement('span');
         state.className = 'audience-state';
         const connectionState = call.peerConnection?.connectionState;
@@ -545,6 +582,92 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
         row.append(marker, name, state);
         return row;
       }));
+    }
+
+    // Bound untrusted text at both ends; render it only through textContent.
+    function normalizeNickname(value) {
+      if (typeof value !== 'string') return '';
+      const cleaned = value.slice(0, 256).normalize('NFC')
+        .replace(/\\s+/gu, ' ')
+        .replace(/[\\u0000-\\u001f\\u007f-\\u009f\\u061c\\u200e\\u200f\\u202a-\\u202e\\u2066-\\u2069]/g, '')
+        .trim();
+      return Array.from(cleaned).slice(0, 24).join('');
+    }
+
+    function sendViewerProfile() {
+      if (!viewerDataConnection?.open) return;
+      try { viewerDataConnection.send({ type: 'VIEWER_PROFILE', nickname: viewerNickname }); }
+      catch { /* Reconnection sends the current profile again on open. */ }
+    }
+
+    function setupViewerNickname() {
+      const dialog = document.getElementById('nickname-dialog');
+      const screen = document.getElementById('nickname-screen');
+      const form = document.getElementById('nickname-form');
+      const appMain = document.getElementById('app-main');
+      const input = document.getElementById('viewer-nickname');
+      const submit = document.getElementById('nickname-submit');
+      const cancel = document.getElementById('nickname-cancel');
+      const waitingEdit = document.getElementById('edit-waiting-nickname');
+      const storageKey = 'viewer-nickname:' + ROOM_ID;
+      let remembered = null;
+      try { remembered = window.sessionStorage.getItem(storageKey); } catch {}
+
+      function saveNickname(value) {
+        viewerNickname = normalizeNickname(value);
+        input.value = viewerNickname;
+        try { window.sessionStorage.setItem(storageKey, viewerNickname); } catch {}
+        const joining = !viewerJoined;
+        viewerJoined = true;
+        dialog.close();
+        waitingEdit.hidden = false;
+        if (joining) {
+          screen.hidden = true;
+          appMain.hidden = false;
+          document.body.classList.remove('nickname-entry-active');
+          setWaitingMessage('Conectando à transmissão', 'A imagem aparece aqui assim que a transmissão começar.');
+          document.dispatchEvent(new Event('viewerjoined'));
+          initViewer();
+          waitingEdit.focus?.({ preventScroll: true });
+        } else sendViewerProfile();
+      }
+
+      function editNickname() {
+        input.value = viewerNickname;
+        submit.querySelectorAll('.player-control-content').forEach(label => {
+          label.textContent = viewerJoined ? 'Salvar apelido' : 'Assistir transmissão';
+        });
+        cancel.textContent = viewerJoined ? 'Cancelar' : 'Continuar sem apelido';
+        if (!viewerJoined) {
+          screen.hidden = false;
+          appMain.hidden = true;
+          document.body.classList.add('nickname-entry-active');
+          document.body.classList.remove('is-connecting');
+          return;
+        }
+        // Keep the editor inside the fullscreen root when invoked from the player.
+        dialog.append(form);
+        (videoWrapper.classList.contains('active') ? videoWrapper : document.body).append(dialog);
+        dialog.showModal();
+      }
+
+      form.addEventListener('submit', event => {
+        event.preventDefault(); saveNickname(input.value);
+      });
+      cancel.addEventListener('click', () => viewerJoined ? dialog.close() : saveNickname(''));
+      dialog.addEventListener('cancel', event => {
+        if (!viewerJoined) { event.preventDefault(); saveNickname(''); }
+      });
+      form.addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return;
+        event.stopPropagation();
+        if (!viewerJoined) { event.preventDefault(); saveNickname(''); }
+      });
+      waitingEdit.addEventListener('click', editNickname);
+      document.getElementById('edit-player-nickname').addEventListener('click', editNickname);
+
+      if (remembered !== null && !NICKNAME_PREVIEW) saveNickname(remembered);
+      else editNickname();
     }
 
     function showHostFeedback(message) {
@@ -857,6 +980,11 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
             if (previous && previous !== conn) previous.close();
             conn.on('data', (msg) => {
               if (hostConnections.get(conn.peer) !== conn) return;
+              if (msg && msg.type === 'VIEWER_PROFILE' && typeof msg.nickname === 'string') {
+                viewerNicknames.set(conn.peer, normalizeNickname(msg.nickname));
+                updateViewerCount();
+                return;
+              }
               if (msg === 'REQUEST_STREAM' && localStream) {
                 startViewerCall(conn.peer);
               }
@@ -864,6 +992,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
             conn.on('close', () => {
               if (hostConnections.get(conn.peer) !== conn) return;
               hostConnections.delete(conn.peer);
+              viewerNicknames.delete(conn.peer);
               activeCalls.get(conn.peer)?.close();
             });
           });
@@ -899,6 +1028,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       activeCalls.clear();
       hostConnections.clear();
       viewerNumbers.clear();
+      viewerNicknames.clear();
       viewerSequence = 0;
       updateViewerCount();
       if (peer) {
@@ -919,19 +1049,48 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
 
     // ================= MODO ESPECTADOR (VIEW) =================
     if (MODE === 'view') {
-      setWaitingMessage('Conectando à transmissão', 'A imagem aparece aqui assim que a transmissão começar.');
       if (PREVIEW) {
+        setWaitingMessage('Conectando à transmissão', 'A imagem aparece aqui assim que a transmissão começar.');
         // Testa somente a composição dos estados; não cria Peer, chamadas ou tentativas de conexão.
         const connected = PREVIEW === 'connected';
         document.body.classList.toggle('is-connecting', !connected);
         if (connected) showPlayer();
         else hidePlayer();
       } else {
-        initViewer();
+        setupViewerNickname();
       }
     }
 
     function initViewer() {
+      // Entry owns the page until confirmed. Download and evaluate PeerJS only
+      // after joining, alongside the player controls that will actually use it.
+      if (typeof Peer !== 'function') {
+        if (viewerScriptLoading) return;
+        viewerScriptLoading = true;
+        cardBtn.disabled = true;
+        const script = document.createElement('script');
+        script.src = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
+        function loadingFailed() {
+          script.remove();
+          viewerScriptLoading = false;
+          cardBtn.disabled = false;
+          setWaitingMessage('Não foi possível iniciar', 'Não conseguimos carregar a conexão. Confira sua internet e tente novamente.');
+          document.body.classList.remove('is-connecting');
+          cardBtn.querySelector('.player-control-content').textContent = 'Tentar novamente';
+          cardBtn.style.display = 'inline-flex';
+          cardBtn.onclick = initViewer;
+        }
+        script.addEventListener('load', () => {
+          if (typeof Peer !== 'function') { loadingFailed(); return; }
+          viewerScriptLoading = false;
+          cardBtn.disabled = false;
+          cardBtn.style.display = 'none';
+          initViewer();
+        }, { once: true });
+        script.addEventListener('error', loadingFailed, { once: true });
+        document.head.append(script);
+        return;
+      }
       peer = new Peer({
         config: {
           iceServers: [
@@ -1028,6 +1187,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       watchForBlockedNetwork(conn.peerConnection);
       conn.on('open', () => {
         if (viewerDataConnection !== conn) return;
+        sendViewerProfile();
         conn.send('REQUEST_STREAM');
       });
       conn.on('close', () => {
@@ -1059,18 +1219,34 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
 
   </script>
   <script type="module">
-    import { attachPlayerControls } from '/player-controls.mjs';
+    ${hasNicknameEntry ? `// The decorative entry scene is independent of deferred player/PeerJS setup.
+    if (document.body.classList.contains('nickname-entry-active')) {
+      Promise.all([import('/nickname-crowd.mjs'), import('/button-motion.mjs')]).then(([{ attachNicknameCrowd }, { attachButtonMotion }]) => {
+        const screen = document.getElementById('nickname-screen');
+        if (!screen.hidden && document.body.classList.contains('nickname-entry-active')) {
+          attachNicknameCrowd(document.getElementById('nickname-crowd'), screen, document.getElementById('nickname-form'));
+          screen.querySelectorAll('[data-button-motion]').forEach(button => attachButtonMotion(button));
+        }
+      }).catch(() => {});
+      await new Promise(resolve => document.addEventListener('viewerjoined', resolve, { once: true }));
+    }` : ''}
+    const [{ attachPlayerControls }, { attachButtonMotion }] = await Promise.all([
+      import('/player-controls.mjs'), import('/button-motion.mjs')
+    ]);
     attachPlayerControls(document.getElementById('video-wrapper'), document.getElementById('screen-video'));
+    document.querySelectorAll('.nickname-form [data-button-motion]').forEach(button => attachButtonMotion(button));
   </script>
   ${safeMode === 'host' ? `<script type="module">
     import { attachHostDiorama } from '/host-diorama.mjs';
     import { attachHostLiveEye } from '/host-live-eye.mjs';
+    import { attachAudienceEyes } from '/audience-eyes.mjs';
     import { attachButtonMotion } from '/button-motion.mjs';
     document.querySelectorAll('[data-button-motion]').forEach(button => {
       attachButtonMotion(button, document, { particles: button.dataset.clickParticles === 'true' });
     });
     attachHostDiorama(document.getElementById('host-diorama'), document.getElementById('video-wrapper'));
     attachHostLiveEye(document.querySelector('.host-live-emblem'), document.getElementById('status-text'));
+    attachAudienceEyes(document.getElementById('audience-list'));
   </script>` : ''}
 </body>
 </html>`;

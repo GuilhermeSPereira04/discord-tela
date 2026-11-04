@@ -19,7 +19,7 @@ A base foi o material do usuário e o hover anteriormente implementado para a Te
 ## Conferência
 
 - 36 testes e build em dry-run aprovados; sem publicação.
-- Interface real compilada de `worker.js`, servida por `.wrangler/host-live-preview-server.mjs`. Somente a URL de QA injeta vídeo gerado por canvas e um transporte sintético; esses dados não entram no HTML de produção.
+- Interface real compilada de `worker.js`, servida atualmente por `scripts/preview.mjs` (`npm run preview`). O servidor antigo em `.wrangler` foi substituído na consolidação de 04/11/2026. Somente a URL de QA injeta vídeo gerado por canvas e um transporte sintético; esses dados não entram no HTML de produção.
 - Trocar Tela, copiar convite, adicionar participantes sintéticos, encerrar e retornar ao CTA verificados no navegador. O teste não capturou a tela real do usuário nem comprovou uma chamada WebRTC entre dispositivos nesta revisão.
 - Larguras de 320, 390, 768, 1024 e 1440 px, em iframes de teste: sem overflow horizontal, ações com 48 px de altura, prévia proporcional e painel empilhado nas larguras menores. Não é teste em telefone físico.
 - Nenhum ID duplicado após a decoração dos botões. Estado ao encerrar: sem stream no vídeo, contador zero, foco no CTA e abertura restaurada. Console do cenário de teste sem erros/avisos.

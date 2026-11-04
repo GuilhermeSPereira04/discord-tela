@@ -1,0 +1,35 @@
+// The only content is the original explanation. The glass scene lives beneath
+// it, cannot receive input and cannot push the announcement out of the viewport.
+.expired-page {
+  display: grid;
+  place-items: center;
+  min-block-size: 100vh;
+  min-block-size: 100dvh;
+  padding: max(1.5rem, env(safe-area-inset-top)) max(1.5rem, env(safe-area-inset-right)) max(1.5rem, env(safe-area-inset-bottom)) max(1.5rem, env(safe-area-inset-left));
+  overflow-x: hidden;
+  color-scheme: light;
+  background: #f2f3f0;
+  color: #202326;
+  isolation: isolate;
+  &::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    pointer-events: none;
+    background: radial-gradient(ellipse at 50% 42%, #fafbf8, transparent 76%);
+  }
+}
+.expired-walkers { position: fixed; inset: 0; inline-size: 100%; block-size: 100%; z-index: -1; pointer-events: none; }
+.expired-message {
+  display: block;
+  position: relative;
+  min-block-size: 0;
+  inline-size: min(100%, 48rem);
+  max-inline-size: 48rem;
+  padding: 0;
+  text-align: center;
+  h1 { font-size: clamp(2rem, 1.15rem + 2.7vw, 3.75rem); font-weight: 500; line-height: 1.12; letter-spacing: -.045em; text-wrap: balance; }
+  p { margin-block-start: clamp(1.25rem, 3vw, 2rem); color: #62686a; font-size: clamp(.9375rem, .8rem + .4vw, 1.125rem); line-height: 1.65; text-wrap: balance; }
+  strong { color: #202326; font-weight: 500; }
+}

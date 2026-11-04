@@ -41,16 +41,45 @@
 }
 #mute-btn:active .audio-speaker { transform: translateX(-.5px) scaleX(.88); }
 
+.player-audio .volume-toggle { display: none; }
+.volume-panel { position: relative; display: flex; align-items: center; }
+.player-audio .player-control::before { border-radius: 50%; }
+.volume-canvas {
+  position: absolute;
+  inset-block-start: -.75rem;
+  inset-inline-start: -.75rem;
+  inline-size: calc(10.75rem + 1.5rem);
+  block-size: calc(100% + 1.5rem);
+  z-index: 0;
+  pointer-events: none;
+}
+.player-audio[data-volume-renderer='webgl2'] {
+  &, .volume-panel, #mute-btn::before { background: transparent; box-shadow: none; }
+  .volume-rail, .volume-handle { opacity: 0; }
+}
 .volume-control {
   --volume-ratio: 1;
   --volume-tilt: 0deg;
   --volume-hit-thumb: .375rem;
   --volume-thumb-half: .1875rem;
+  --volume-handle-y: -50%;
   --volume-position: calc(var(--volume-thumb-half) + (100% - var(--volume-hit-thumb)) * var(--volume-ratio));
   position: relative;
-  inline-size: clamp(6rem, 14vw, 10rem);
-  min-inline-size: 3rem;
-  flex-shrink: 1;
+  inline-size: 0;
+  min-inline-size: 0;
+  flex: 0 0 auto;
+  opacity: 0;
+  visibility: hidden;
+  // Width switches before the reveal: the native hit area never grows under
+  // an ongoing drag. Only opacity animates; other actions stay right-aligned.
+  transition: opacity var(--duration-fast) var(--ease-standard),
+    visibility var(--duration-audio);
+}
+.is-volume-open .volume-control {
+  inline-size: 7rem;
+  margin-inline-end: var(--space-3);
+  opacity: 1;
+  visibility: visible;
 }
 .volume-rail, .volume-handle, .volume-fill { pointer-events: none; }
 .volume-rail {
@@ -76,11 +105,11 @@
   position: absolute;
   inset-inline-start: var(--volume-position);
   inset-block-start: 50%;
-  inline-size: .25rem;
+  inline-size: .625rem;
   block-size: .75rem;
-  border-radius: .125rem;
+  border-radius: 999px;
   background: var(--color-text);
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, var(--volume-handle-y));
   transition: transform var(--duration-audio) var(--ease-audio-settle), opacity var(--duration-icon) var(--ease-standard);
 }
 .volume-control output {
@@ -90,7 +119,7 @@
   z-index: 3;
   min-inline-size: 4ch;
   padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-small);
+  border-radius: 999px;
   background: var(--color-canvas);
   color: var(--color-text);
   font-size: var(--text-small);
@@ -129,13 +158,13 @@
     background: transparent;
   }
   &::-moz-range-thumb { inline-size: var(--volume-hit-thumb); block-size: 1.5rem; border: 0; background: transparent; }
-  &:focus-visible ~ .volume-handle { transform: translate(-50%, -50%) scaleY(1.2); }
+  &:focus-visible ~ .volume-handle { transform: translate(-50%, var(--volume-handle-y)) scaleY(1.2); }
   &:focus-visible ~ .volume-rail { transform: scaleY(1.5); }
   &:focus-visible ~ output { opacity: 1; transform: translate(-50%, 0); }
 }
 .volume-control.is-adjusting {
   .volume-handle {
-    transform: translate(-50%, -50%) rotate(var(--volume-tilt)) scale(1.25);
+    transform: translate(-50%, var(--volume-handle-y)) rotate(var(--volume-tilt)) scale(1.25);
     transition-duration: var(--duration-press);
     transition-timing-function: var(--ease-standard);
   }
@@ -148,17 +177,80 @@
   #mute-btn:not(.is-muted):hover .audio-wave--far { transform: translateX(.75px); }
   .volume-control:hover output { opacity: 1; transform: translate(-50%, 0); }
 }
-// A longer native track helps precise touch adjustment. It gets a dedicated row
-// on narrow portrait screens; the arrangement stays fixed throughout a drag.
-@media (width < 28rem) and (orientation: portrait) {
-  .controls-bar { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); padding-block-start: var(--space-2); }
-  .player-audio .volume-control { flex: 1; inline-size: auto; }
-  .player-actions .player-control { flex: 1 1 0; }
-  .player-actions .player-control--primary { flex-grow: 2; }
+// A single native input changes writing mode, rather than rotating a horizontal
+// hit area or maintaining a second, potentially stale volume control.
+@media (width < 40rem), (hover: none), (pointer: coarse) {
+  .player-audio .volume-toggle { display: inline-flex; }
+  .volume-panel {
+    position: absolute;
+    inset-inline-start: -.5rem;
+    inset-block-end: calc(100% + var(--space-2));
+    z-index: 4;
+    flex-direction: column-reverse;
+    gap: var(--space-2);
+    inline-size: 4rem;
+    padding: 1.75rem var(--space-2) var(--space-2);
+    border-radius: 2rem;
+    background: var(--color-surface-raised);
+    box-shadow: 0 .5rem 2rem rgb(0 0 0 / .3);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(.375rem);
+    transition: opacity var(--duration-fast) var(--ease-standard),
+      transform var(--duration-audio) var(--ease-standard), visibility var(--duration-fast);
+  }
+  .is-volume-open .volume-panel { opacity: 1; visibility: visible; transform: translateY(0); }
+  .volume-canvas { inline-size: calc(100% + 1.5rem); }
+  .volume-control, .is-volume-open .volume-control {
+    --volume-length: clamp(4rem, 25vh, 9rem);
+    --volume-length: clamp(4rem, 25dvh, 9rem);
+    --volume-handle-y: 50%;
+    inline-size: var(--player-target-size);
+    block-size: var(--volume-length);
+    margin: 0;
+    opacity: 1;
+    visibility: inherit;
+    transition: none;
+  }
+  .player-audio input[type='range'] {
+    writing-mode: vertical-lr;
+    direction: rtl;
+    inline-size: var(--volume-length);
+    block-size: var(--player-target-size);
+    cursor: ns-resize;
+    touch-action: none;
+  }
+  .volume-rail {
+    inset-inline: auto;
+    inset-inline-start: calc(50% - 1px);
+    inset-block: var(--volume-thumb-half);
+    inline-size: 2px;
+    block-size: auto;
+  }
+  .volume-fill { transform: scaleY(var(--volume-ratio)); transform-origin: bottom; }
+  .volume-control.is-adjusting .volume-rail,
+  .player-audio input:focus-visible ~ .volume-rail { transform: scaleX(1.5); }
+  .volume-handle {
+    inset-inline-start: 50%;
+    inset-block-start: auto;
+    inset-block-end: var(--volume-position);
+    inline-size: .75rem;
+    block-size: .625rem;
+  }
+  .volume-control output {
+    inset-inline-start: 50%;
+    inset-block-end: calc(100% + .125rem);
+    padding: 0;
+    background: transparent;
+    opacity: 1;
+    transform: translateX(-50%);
+  }
+  .volume-control.is-adjusting output,
+  .player-audio input:focus-visible ~ output { transform: translateX(-50%); }
 }
 @include m.reduced-motion {
   .audio-speaker, #mute-btn:active .audio-speaker { transform: none; }
   .volume-handle,
   .volume-control.is-adjusting .volume-handle,
-  .volume-control input:focus-visible ~ .volume-handle { transform: translate(-50%, -50%); }
+  .volume-control input:focus-visible ~ .volume-handle { transform: translate(-50%, var(--volume-handle-y)); }
 }
