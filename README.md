@@ -1,4 +1,8 @@
-# 🖥️ Discord Bot - Compartilhamento de Tela P2P (VDO.Ninja)
+# 🖥️ Discord Bot - Compartilhamento de Tela P2P
+
+O comando `/tela` cria uma sala no navegador: a mensagem do canal leva o botão **Assistir**, e o botão **Transmitir** chega só para quem criou a sala. O vídeo vai direto de quem transmite para quem assiste (WebRTC/PeerJS); o bot roda num Cloudflare Worker, sem servidor ligado 24 h.
+
+Veja [Publicar](#publicar) para colocar no ar.
 
 ## Desenvolvimento local da interface
 
@@ -6,7 +10,7 @@ Os estilos são gerenciados em `styles/src` com Sass modular. A compilação aco
 
 A tipografia atual é a Instrument Sans variável, servida localmente de `public/fonts`, com sua [licença OFL](public/fonts/OFL-Instrument-Sans.txt). A tela de espera do espectador usa duas esferas em branco e roxo neon, com faixa central nítida e difusão externa inspiradas na referência do Frontpush; o movimento respeita a preferência de movimento reduzido.
 
-O repositório tem duas entradas diferentes: `index.js` inicia o bot Node e gera links do VDO.Ninja; `worker.js` recebe interações do Discord na Cloudflare e serve a interface própria com PeerJS. O comando `npm start` não abre essa interface.
+Tudo roda em `worker.js`: ele recebe as interações do Discord, assina os links das salas, atualiza a mensagem do `/tela` e serve a interface com PeerJS.
 
 A [tela do transmissor](docs/host-screen.md) compartilha a identidade da espera e mostra as conexões reais como Espectador 01, 02 etc., sem inventar identidades do Discord. Ela oferece convite por link e indica se a captura inclui áudio.
 
@@ -42,59 +46,25 @@ A [abertura do diorama foi otimizada](docs/diorama-startup.md): preparação est
 
 Esse modo não precisa de token do Discord nem de login na Cloudflare. Clique em **Selecionar Tela ou Jogo** na página de transmissão e escolha o que compartilhar. Os links acima são apenas para teste local; outras pessoas não acessam o seu computador usando esse endereço.
 
-O PeerJS ainda precisa de internet para sinalização. O código atual configura STUN, sem TURN, então a conexão entre certas redes pode falhar. Resolução, taxa de quadros e áudio dependem do navegador, da fonte capturada, do equipamento e da rede; 1080p/60fps é uma meta, não uma qualidade garantida. Para acesso remoto à captura, use HTTPS.
+O PeerJS ainda precisa de internet para sinalização. O código atual configura STUN, sem TURN, então a conexão entre certas redes pode falhar; nesse caso o espectador vê um aviso sugerindo outra rede (por exemplo, 4G/5G). Resolução, taxa de quadros e áudio dependem do navegador, da fonte capturada, do equipamento e da rede; 1080p/60fps é uma meta, não uma qualidade garantida. Para acesso remoto à captura, use HTTPS.
 
-Para ativar o bot Node, copie `.env.example` para `.env`, preencha suas credenciais localmente e execute `npm start`. O Worker usa outra configuração: endpoint de interações no Discord e `DISCORD_PUBLIC_KEY` da sua aplicação. O valor que veio em `wrangler.toml` pertence à configuração original e precisa ser substituído ao configurar sua aplicação. Não publique tokens no Git.
+## Publicar
 
----
-
-Bot privado para Discord que cria salas criptografadas sob demanda para transmissão de tela em **1080p/60fps com áudio estéreo** direto pelo navegador usando WebRTC P2P.
-
-## 🚀 1. Configuração Inicial
-
-1. Copie `.env.example` para `.env` e preencha:
-   - `DISCORD_TOKEN`: Token gerado em **Discord Developer Portal > Bot > Reset Token**.
-   - `CLIENT_ID`: ID da aplicação em **General Information > Application ID**.
-   - `GUILD_ID`: ID do seu servidor no Discord (ative o *Modo Desenvolvedor* no Discord, clique com o botão direito no servidor e em **Copiar ID do servidor**).
-
-2. Para testar localmente no seu PC:
+1. **Discord Developer Portal**
+   - *General Information*: copie a **Public Key** para `DISCORD_PUBLIC_KEY` em `wrangler.toml`.
+   - *Bot*: ligue **Public Bot** se outras pessoas puderem adicioná-lo.
+   - *Installation → Guild Install*: escopos `applications.commands` e `bot`, com as permissões **View Channels**, **Send Messages** e **Embed Links** (valor `19456`). O bot publica a mensagem da sala no canal e depois a atualiza e apaga; sem ser membro, a sala funciona, mas a mensagem fica parada.
+2. **Segredos do Worker** (o valor é pedido pelo terminal; nunca coloque no Git):
    ```bash
-   npm install
-   npm start
+   npx wrangler secret put HOST_LINK_SECRET   # senha aleatória que assina os links das salas
+   npx wrangler secret put DISCORD_TOKEN      # token do bot, para atualizar/apagar a mensagem
    ```
+   Para gerar a senha: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` (não cole a saída em lugar público).
+3. **Publicar:** `npx wrangler deploy`. Copie o endereço mostrado para *General Information → Interactions Endpoint URL* e salve.
+4. **Registrar o `/tela`** (uma vez): copie `.env.example` para `.env`, preencha `DISCORD_TOKEN` e `CLIENT_ID` e rode `npm run register`.
 
----
+### Como as salas funcionam
 
-## ☁️ 2. Como Hospedar na Nuvem (24/7)
-
-O projeto já inclui os arquivos de configuração prontos para as principais plataformas:
-
-### Opção A: Discloud ou Square Cloud (Mais fácil via `.zip`)
-1. Edite o arquivo `.env` com suas chaves.
-2. Compacte em um arquivo `.zip` **apenas** os arquivos:
-   - `index.js`
-   - `package.json`
-   - `.env`
-   - `discloud.config` (se usar Discloud) ou `squarecloud.app` (se usar Square Cloud)
-   *(⚠️ Não inclua a pasta `node_modules` no `.zip`!)*
-3. Faça o upload do `.zip` no painel da [Discloud](https://discloudbot.com/) ou da [Square Cloud](https://squarecloud.app/).
-
-### Opção B: Render.com (Gratuito via GitHub)
-1. Suba este repositório para um repositório privado no seu GitHub (sem o `.env`).
-2. No Render, crie um **Web Service** ou **Background Worker** conectado ao repositório:
-   - **Build Command:** `npm install`
-   - **Start Command:** `npm start`
-3. Em **Environment Variables**, adicione `DISCORD_TOKEN`, `CLIENT_ID` e `GUILD_ID`.
-   *(O código em `index.js` já possui um servidor HTTP embutido que responde na variável `PORT` caso use Web Service).*
-
-### Opção C: VPS Linux (Oracle Cloud / Google Cloud / AWS)
-```bash
-git clone <seu-repositorio>
-cd discord-bot-tela
-npm install
-# Crie o arquivo .env com suas credenciais
-npm install -g pm2
-pm2 start index.js --name "bot-tela"
-pm2 save
-pm2 startup
-```
+- Os links valem por 24 h e são assinados: trocar `mode=view` por `mode=host` ou mexer no link faz ele ser recusado.
+- Durante a transmissão, a mensagem mostra "Ao vivo" e quantas pessoas assistem. **Encerrar** apaga a mensagem; fechar a aba deixa "Transmissão encerrada".
+- Quem transmite escolhe a prioridade da imagem (Nítida, Fluida ou Leve). O bitrate é dividido conforme o número de espectadores.

@@ -48,6 +48,7 @@ function fixture() {
     .replace('${JSON.stringify(safeRoom)}', '"audience"')
     .replace('${JSON.stringify(safeMode)}', '"host"')
     .replace('${JSON.stringify(inviteHref)}', '""')
+    .replace('${JSON.stringify(hostStatus)}', 'false')
     .replace('${JSON.stringify(isPreview ? preview : null)}', 'null');
   vm.runInContext(script, context);
   return { get, run: value => vm.runInContext(value, context), get copied() { return copied; },

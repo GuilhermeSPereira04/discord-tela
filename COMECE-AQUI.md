@@ -6,7 +6,7 @@ licenças, scripts de build e testes. Os arquivos gerados são recriados pelo bu
 
 ## Rodar a interface
 
-Use Node.js 24 (a versão usada na validação foi 24.11.1) e npm.
+Use Node.js 22 ou superior e npm.
 Extraia o ZIP e abra o terminal dentro da pasta bot-discord-front-atualizado:
 
 ```bash
@@ -37,13 +37,11 @@ aplicação do Discord; mantenha a configuração original se continuar usando a
 
 ## Entradas do projeto
 
-- worker.js: interface própria com PeerJS e interações do Discord na Cloudflare.
-- index.js / npm start: bot Node anterior, que gera links do VDO.Ninja.
-  `npm start` não inicia a interface nova.
+- worker.js: interface com PeerJS e interações do Discord na Cloudflare.
+- registrar-comando.js (`npm run register`): registra o /tela uma vez.
 
-O front local funciona sem .env ou token do Discord. Para o bot Node opcional,
-preencha um .env local com as variáveis do .env.example. Se integrar no projeto
-existente, preserve o .env e as configurações particulares que você já usa.
+O front local funciona sem .env ou token do Discord. Para publicar, siga a
+seção "Publicar" do README.
 
 ## Alterar o front
 

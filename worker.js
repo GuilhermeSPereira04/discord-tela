@@ -44,19 +44,23 @@ function randomHex(bytesLength) {
 }
 
 const LINK_TTL_SECONDS = 24 * 60 * 60;
+// Depois que o link vence ninguém novo entra, mas o host ainda pode atualizar
+// ou apagar a mensagem de uma transmissão longa por mais este tempo.
+const STATUS_GRACE_SECONDS = 12 * 60 * 60;
+const DISCORD_API = 'https://discord.com/api/v10';
 const hmacKeys = new Map();
 
 function base64url(bytes) {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-async function signLink(secret, room, exp, role) {
+async function sign(secret, payload) {
   let key = hmacKeys.get(secret);
   if (!key) {
     key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
     hmacKeys.set(secret, key);
   }
-  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${room}.${exp}.${role}`));
+  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
   return base64url(new Uint8Array(mac).slice(0, 16));
 }
 
@@ -67,31 +71,30 @@ function safeEqual(a, b) {
   return diff === 0;
 }
 
-// Links assinados: só quem recebeu o link de transmitir consegue abrir o modo host,
-// e ambos deixam de abrir depois de LINK_TTL_SECONDS.
-async function buildRoomLinks(origin, secret, room, title) {
-  const exp = Math.floor(Date.now() / 1000) + LINK_TTL_SECONDS;
-  const base = `${origin}/?room=${room}&title=${encodeURIComponent(title)}&exp=${exp}`;
-  const [hostSig, viewSig] = await Promise.all([signLink(secret, room, exp, 'host'), signLink(secret, room, exp, 'view')]);
-  return {
-    hostUrl: `${base}&mode=host&sig=${hostSig}`,
-    viewUrl: `${base}&mode=view&sig=${viewSig}`
-  };
+// O que cada link assina. O do host também carrega a mensagem do Discord que ele
+// pode atualizar ou apagar, então canal, mensagem e autor entram na assinatura.
+function linkPayload(params) {
+  const room = params.get('room') || '';
+  const exp = params.get('exp') || '';
+  if (params.get('mode') !== 'host') return `${room}.${exp}.view`;
+  return `${room}.${exp}.host.${params.get('ch') || ''}.${params.get('msg') || ''}.${params.get('uid') || ''}`;
 }
 
-async function verifyRoomLink(secret, params) {
-  const room = params.get('room');
-  const role = params.get('mode') === 'host' ? 'host' : 'view';
+async function signedUrl(origin, secret, fields) {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(fields)) if (v) params.set(k, v);
+  params.set('sig', await sign(secret, linkPayload(params)));
+  return `${origin}/?${params}`;
+}
+
+function viewUrlFor(origin, secret, room, title, exp) {
+  return signedUrl(origin, secret, { room, title, exp: String(exp), mode: 'view' });
+}
+
+async function verifyRoomLink(secret, params, graceSeconds = 0) {
   const exp = Number(params.get('exp'));
-  if (!Number.isInteger(exp) || exp < Date.now() / 1000) return false;
-  return safeEqual(params.get('sig'), await signLink(secret, room, exp, role));
-}
-
-function viewUrlFromHost(url) {
-  const view = new URL(url);
-  view.searchParams.set('mode', 'view');
-  view.searchParams.delete('preview');
-  return view;
+  if (!Number.isInteger(exp) || exp + graceSeconds < Date.now() / 1000) return false;
+  return safeEqual(params.get('sig'), await sign(secret, linkPayload(params)));
 }
 
 function invalidLinkPage() {
@@ -103,46 +106,147 @@ function invalidLinkPage() {
   );
 }
 
-async function sendHostLinkFollowup(interaction, hostUrl) {
-  const res = await fetch(`https://discord.com/api/v10/webhooks/${interaction.application_id}/${interaction.token}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      flags: 64, // efêmera: só quem usou o comando vê
-      content: 'Seu link para transmitir. Só você vê esta mensagem; não compartilhe.',
-      components: [{ type: 1, components: [linkButton('Transmitir', hostUrl, '📡')] }]
-    })
-  });
-  if (!res.ok) console.error('Falha ao enviar link do host:', res.status, await res.text());
-}
-
 function linkButton(label, url, emoji) {
   return { type: 2, style: 5, label, url, emoji: { name: emoji } };
 }
 
-async function handleTelaCommand(interaction, origin, secret, ctx) {
-  const rawName = interaction.data.options?.find((o) => o.name === 'nome')?.value;
-  const customName = (typeof rawName === 'string' && rawName.trim().slice(0, MAX_ROOM_NAME)) || 'Sala de Tela';
-  const { hostUrl, viewUrl } = await buildRoomLinks(origin, secret, randomHex(6), customName);
-  const userId = interaction.member?.user?.id ?? interaction.user?.id;
-
-  // A resposta pública leva só o Assistir; o Transmitir vai em seguida, em mensagem efêmera.
-  ctx.waitUntil(sendHostLinkFollowup(interaction, hostUrl));
-
-  return Response.json({
-    type: 4,
-    data: {
-      embeds: [{
-        title: `🖥️  ${customName}`,
-        description: `Iniciada por <@${userId}> • **1080p 60fps**\nO link para transmitir foi enviado só para quem criou a sala.`,
-        color: 0x2b2d31
-      }],
-      components: [{ type: 1, components: [linkButton('Assistir', viewUrl, '👀')] }]
-    }
-  });
+function roomEmbed(title, userId, line, color) {
+  return {
+    title: `🖥️  ${title}`,
+    description: `Iniciada por <@${userId}> • **1080p 60fps**${line ? `\n${line}` : ''}`,
+    color
+  };
 }
 
-function renderModernApp(room, mode, title, preview, localPreviewEnabled = false, inviteHref = '') {
+async function discord(path, init) {
+  const res = await fetch(`${DISCORD_API}${path}`, init);
+  if (!res.ok) console.error(`Discord ${init?.method || 'GET'} ${path.split('/').slice(0, 3).join('/')}:`, res.status, await res.text());
+  return res;
+}
+
+// O bot publica a mensagem pública no canal: assim ela é dele, e ele pode editá-la
+// e apagá-la depois. Respostas de comando são mensagens de webhook, que o bot não edita.
+async function createRoom(interaction, origin, secret, env, room) {
+  const viewUrl = await viewUrlFor(origin, secret, room.id, room.title, room.exp);
+  const publicMessage = {
+    embeds: [roomEmbed(room.title, room.userId, 'Aguardando quem vai transmitir.', 0x2b2d31)],
+    components: [{ type: 1, components: [linkButton('Assistir', viewUrl, '👀')] }],
+    allowed_mentions: { parse: [] }
+  };
+  const channelId = interaction.channel_id || interaction.channel?.id;
+  let posted = null;
+  if (!env?.DISCORD_TOKEN) console.error('DISCORD_TOKEN não configurado: a mensagem da sala vai pelo modo reserva.');
+  else if (!interaction.guild_id) console.log('/tela fora de servidor (DM ou app de usuário): modo reserva.');
+  else if (channelId) {
+    const res = await discord(`/channels/${channelId}/messages`, {
+      method: 'POST',
+      headers: { Authorization: `Bot ${env.DISCORD_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(publicMessage)
+    });
+    if (res.ok) posted = await res.json();
+  }
+
+  const hostUrl = await signedUrl(origin, secret, {
+    room: room.id,
+    title: room.title,
+    exp: String(room.exp),
+    mode: 'host',
+    ch: posted ? channelId : '',
+    msg: posted?.id,
+    uid: room.userId
+  });
+
+  // Primeiro preenche a resposta adiada (só quem usou o comando vê). A ordem importa:
+  // enquanto ela está "pensando", o Discord transforma a próxima mensagem numa edição dela.
+  const webhook = `/webhooks/${interaction.application_id}/${interaction.token}`;
+  await discord(`${webhook}/messages/@original`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      content: posted
+        ? 'Sala criada. Este é o seu link para transmitir: só você vê esta mensagem, não compartilhe.'
+        : 'Sala criada. Este é o seu link para transmitir: só você vê esta mensagem, não compartilhe.\n-# Não consegui publicar a sala neste canal como bot, então a mensagem abaixo não será atualizada nem apagada. Confira se o bot pode ver o canal, enviar mensagens e inserir links.',
+      components: [{ type: 1, components: [linkButton('Transmitir', hostUrl, '📡')] }]
+    })
+  });
+
+  // Modo reserva: sem o bot no canal, a sala é anunciada como mensagem do comando.
+  if (!posted) {
+    await discord(webhook, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(publicMessage) });
+  }
+}
+
+async function handleTelaCommand(interaction, origin, secret, env, ctx) {
+  const rawName = interaction.data.options?.find((o) => o.name === 'nome')?.value;
+  const room = {
+    id: randomHex(6),
+    title: (typeof rawName === 'string' && rawName.trim().slice(0, MAX_ROOM_NAME)) || 'Sala de Tela',
+    exp: Math.floor(Date.now() / 1000) + LINK_TTL_SECONDS,
+    userId: interaction.member?.user?.id ?? interaction.user?.id
+  };
+  // Resposta adiada e efêmera: o Discord espera até 15 min pela edição com o link do host.
+  ctx.waitUntil(createRoom(interaction, origin, secret, env, room));
+  return Response.json({ type: 5, data: { flags: 64 } });
+}
+
+// Avisos da página do host: ao vivo (com nº de espectadores), aba fechada ou encerrada.
+async function handleHostStatus(request, env, origin) {
+  const secret = env?.HOST_LINK_SECRET;
+  const botToken = env?.DISCORD_TOKEN;
+  let body;
+  try {
+    body = JSON.parse(await request.text());
+  } catch {
+    return new Response('JSON inválido', { status: 400 });
+  }
+  const params = new URLSearchParams(typeof body?.query === 'string' ? body.query : '');
+  if (!secret || params.get('mode') !== 'host' || !(await verifyRoomLink(secret, params, STATUS_GRACE_SECONDS))) {
+    return new Response('Link inválido', { status: 403 });
+  }
+  const ch = params.get('ch');
+  const msg = params.get('msg');
+  if (!botToken) {
+    console.error('DISCORD_TOKEN não configurado: a mensagem da sala não é atualizada.');
+    return new Response(null, { status: 204 });
+  }
+  if (!/^\d+$/.test(ch || '') || !/^\d+$/.test(msg || '')) return new Response(null, { status: 204 });
+
+  const messageUrl = `${DISCORD_API}/channels/${ch}/messages/${msg}`;
+  const headers = { Authorization: `Bot ${botToken}`, 'Content-Type': 'application/json' };
+  const title = (params.get('title') || 'Sala de Tela').slice(0, MAX_ROOM_NAME);
+  const uid = params.get('uid');
+  let res;
+
+  if (body.state === 'ended') {
+    res = await fetch(messageUrl, { method: 'DELETE', headers });
+  } else if (body.state === 'closed') {
+    res = await fetch(messageUrl, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ embeds: [roomEmbed(title, uid, '⚫ Transmissão encerrada', 0x2b2d31)], components: [] })
+    });
+  } else if (body.state === 'live') {
+    const viewers = Math.max(0, Math.min(99, Number(body.viewers) || 0));
+    const audience = viewers === 0 ? 'ninguém assistindo ainda' : viewers === 1 ? '1 assistindo' : `${viewers} assistindo`;
+    const viewUrl = await viewUrlFor(origin, secret, params.get('room'), title, params.get('exp'));
+    res = await fetch(messageUrl, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({
+        embeds: [roomEmbed(title, uid, `🔴 **Ao vivo** · ${audience}`, 0xed4245)],
+        components: [{ type: 1, components: [linkButton('Assistir', viewUrl, '👀')] }]
+      })
+    });
+  } else {
+    return new Response('Estado inválido', { status: 400 });
+  }
+
+  if (res.ok) console.log(`Mensagem ${msg}: ${body.state} aplicado (${res.status}).`);
+  else console.error(`Falha ao aplicar ${body.state} na mensagem ${msg}:`, res.status, await res.text());
+  return new Response(null, { status: 204, headers: { 'X-Discord-Status': String(res.status) } });
+}
+
+function renderModernApp(room, mode, title, preview, localPreviewEnabled = false, inviteHref = '', hostStatus = false) {
   const safeRoom = (room || 'default').replace(/[^a-zA-Z0-9_-]/g, '');
   const safeMode = mode === 'host' ? 'host' : 'view';
   const safeTitle = (title || 'Sala de Tela').replace(/[<>"]/g, '');
@@ -235,6 +339,14 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
     <ul id="audience-list" class="audience-list" aria-label="Espectadores conectados"></ul>
     <p id="audience-identity" class="audience-caption" hidden>Os nomes não são informados pelo link de acesso.</p>
     <div class="host-invite"><button id="copy-view-link" class="host-copy-link motion-button" data-button-motion type="button"><span class="button-motion-content">Copiar link para assistir <span aria-hidden="true">↗</span></span></button><p id="copy-feedback" class="audience-caption" role="status" hidden></p><input id="view-link-fallback" class="view-link-fallback" aria-label="Link para assistir" readonly hidden></div>
+    <fieldset class="host-quality">
+      <legend>Prioridade da imagem</legend>
+      <div class="quality-options">
+        <label class="quality-option"><input type="radio" name="quality" value="sharp" checked><span><strong>Nítida</strong><small>Texto, código e slides. Com pouca banda, perde fluidez antes de perder definição.</small></span></label>
+        <label class="quality-option"><input type="radio" name="quality" value="fluid"><span><strong>Fluida</strong><small>Jogos e vídeos. Com pouca banda, perde definição antes de travar.</small></span></label>
+        <label class="quality-option"><input type="radio" name="quality" value="light"><span><strong>Leve</strong><small>720p a 30 fps, para upload fraco.</small></span></label>
+      </div>
+    </fieldset>
     <p id="host-audio-status" class="host-audio-status" hidden></p>
   </aside></div>` : ''}
 
@@ -242,6 +354,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
     const ROOM_ID = "canja_v2_" + ${JSON.stringify(safeRoom)};
     const MODE = ${JSON.stringify(safeMode)};
     const INVITE_HREF = ${JSON.stringify(inviteHref)};
+    const HOST_STATUS = ${JSON.stringify(hostStatus)};
     const PREVIEW = ${JSON.stringify(isPreview ? preview : null)};
 
     function openViewerPreview(state) {
@@ -360,6 +473,10 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
     syncMotionVisibility();
 
     function updateViewerCount() {
+      if (localStream) {
+        applyBitrateToAll();
+        scheduleLiveStatus();
+      }
       if (!viewerCountEl) return;
       const count = activeCalls.size;
       viewerCountEl.textContent = String(count);
@@ -393,18 +510,129 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
     }
 
     // Aumenta o bitrate do WebRTC para 1080p 60fps nítido
+    // Escolhida por quem transmite; vale para a captura e para cada espectador.
+    const QUALITY_PROFILES = {
+      sharp: { hint: 'detail', degradation: 'maintain-resolution', width: 1920, height: 1080, fps: 60, cap: 8500000 },
+      fluid: { hint: 'motion', degradation: 'maintain-framerate', width: 1920, height: 1080, fps: 60, cap: 8500000 },
+      light: { hint: 'motion', degradation: 'balanced', width: 1280, height: 720, fps: 30, cap: 2500000 }
+    };
+    let qualityKey = 'sharp';
+    try {
+      const saved = localStorage.getItem('tela-quality');
+      if (QUALITY_PROFILES[saved]) qualityKey = saved;
+    } catch (e) {}
+    function qualityProfile() { return QUALITY_PROFILES[qualityKey]; }
+
+    // O upload de quem transmite é dividido entre os espectadores: com mais gente,
+    // cada um recebe menos, em vez de travar para todos.
+    function bitrateForViewers(count) {
+      if (count <= 1) return 8500000;
+      if (count === 2) return 6000000;
+      if (count === 3) return 4500000;
+      return 3500000;
+    }
+
     function boostSenderBitrate(peerConnection) {
       if (!peerConnection || !peerConnection.getSenders) return;
+      const profile = qualityProfile();
+      const maxBitrate = Math.min(bitrateForViewers(activeCalls.size), profile.cap);
       peerConnection.getSenders().forEach(async (sender) => {
         if (sender.track && sender.track.kind === 'video') {
           try {
             const params = sender.getParameters();
-            if (!params.encodings) params.encodings = [{}];
-            params.encodings[0].maxBitrate = 8500000; // 8.5 Mbps
-            params.encodings[0].maxFramerate = 60;
+            if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+            params.encodings[0].maxBitrate = maxBitrate;
+            params.encodings[0].maxFramerate = profile.fps;
+            params.degradationPreference = profile.degradation;
             await sender.setParameters(params);
           } catch (e) {}
         }
+      });
+    }
+
+    let appliedViewerCount = -1;
+    function applyBitrateToAll() {
+      if (appliedViewerCount === activeCalls.size) return;
+      appliedViewerCount = activeCalls.size;
+      activeCalls.forEach((call) => boostSenderBitrate(call.peerConnection));
+    }
+
+    // Começa a transmissão já com bitrate alto, sem passar os primeiros segundos em 540p.
+    function raiseStartBitrate(sdp) {
+      const video = sdp.match(/^m=video [^\\r\\n]*/m);
+      if (!video) return sdp;
+      const types = video[0].split(' ').slice(3);
+      const codecs = types.filter((pt) => {
+        const map = sdp.match(new RegExp('^a=rtpmap:' + pt + ' ([^/\\r\\n]+)', 'm'));
+        return map && !/^(rtx|red|ulpfec|flexfec)/i.test(map[1]);
+      });
+      const extra = 'x-google-start-bitrate=4000;x-google-min-bitrate=800';
+      codecs.forEach((pt) => {
+        const fmtp = new RegExp('^(a=fmtp:' + pt + ' [^\\r\\n]*)', 'm');
+        if (fmtp.test(sdp)) sdp = sdp.replace(fmtp, (line) => line.includes('x-google-start-bitrate') ? line : line + ';' + extra);
+        else sdp = sdp.replace(new RegExp('^(a=rtpmap:' + pt + ' [^\\r\\n]*)', 'm'), '$1\\r\\na=fmtp:' + pt + ' ' + extra);
+      });
+      return sdp;
+    }
+
+    async function setQuality(key) {
+      if (!QUALITY_PROFILES[key] || key === qualityKey) return;
+      qualityKey = key;
+      try { localStorage.setItem('tela-quality', key); } catch (e) {}
+      const track = localStream?.getVideoTracks()[0];
+      if (!track) return;
+      const profile = qualityProfile();
+      if ('contentHint' in track) track.contentHint = profile.hint;
+      try {
+        await track.applyConstraints({
+          width: { ideal: profile.width },
+          height: { ideal: profile.height },
+          frameRate: { ideal: profile.fps, max: profile.fps }
+        });
+      } catch (e) {}
+      appliedViewerCount = -1;
+      applyBitrateToAll();
+    }
+
+    (document.querySelectorAll?.('input[name="quality"]') || []).forEach((input) => {
+      input.checked = input.value === qualityKey;
+      input.addEventListener('change', () => { if (input.checked) setQuality(input.value); });
+    });
+
+    // ================= MENSAGEM NO DISCORD =================
+    // A página avisa o Worker só quando algo muda, no máximo a cada 5 s.
+    let statusTimer = null;
+    let lastStatusKey = '';
+    let lastStatusAt = 0;
+
+    function sendHostStatus(state, beacon = false) {
+      if (!HOST_STATUS) return;
+      const body = JSON.stringify({ query: window.location.search, state, viewers: activeCalls.size });
+      try {
+        if (beacon && navigator.sendBeacon) {
+          navigator.sendBeacon('/api/status', new Blob([body], { type: 'application/json' }));
+          return;
+        }
+        fetch('/api/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true }).catch(() => {});
+      } catch (e) {}
+    }
+
+    function scheduleLiveStatus() {
+      if (!HOST_STATUS || statusTimer) return;
+      statusTimer = setTimeout(() => {
+        statusTimer = null;
+        if (!localStream) return;
+        const key = 'live:' + activeCalls.size;
+        if (key === lastStatusKey) return;
+        lastStatusKey = key;
+        lastStatusAt = Date.now();
+        sendHostStatus('live');
+      }, Math.max(0, 5000 - (Date.now() - lastStatusAt)));
+    }
+
+    if (HOST_STATUS) {
+      window.addEventListener('pagehide', () => {
+        if (localStream) sendHostStatus('closed', true);
       });
     }
 
@@ -448,11 +676,12 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       const captureId = ++captureGeneration;
       showHostFeedback('');
       try {
+        const profile = qualityProfile();
         const newStream = await navigator.mediaDevices.getDisplayMedia({
           video: {
-            width: { ideal: 1920, max: 2560 },
-            height: { ideal: 1080, max: 1440 },
-            frameRate: { ideal: 60, max: 60 }
+            width: { ideal: profile.width, max: profile.width === 1920 ? 2560 : profile.width },
+            height: { ideal: profile.height, max: profile.height === 1080 ? 1440 : profile.height },
+            frameRate: { ideal: profile.fps, max: profile.fps }
           },
           audio: {
             echoCancellation: false,
@@ -471,7 +700,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
         localStream = newStream;
         const videoTrack = localStream.getVideoTracks()[0];
         if (videoTrack && 'contentHint' in videoTrack) {
-          videoTrack.contentHint = 'motion';
+          videoTrack.contentHint = profile.hint;
         }
 
         videoEl.srcObject = localStream;
@@ -483,6 +712,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
         hostAudioStatus.hidden = false;
         hostAudioStatus.textContent = localStream.getAudioTracks().length ? 'Áudio compartilhado' : 'Sem áudio compartilhado';
         setLiveStatus(Boolean(peer?.open), peer?.open ? 'Ao vivo' : 'Preparando a sala');
+        scheduleLiveStatus();
 
         videoTrack.onended = () => stopHostStream();
 
@@ -528,7 +758,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
               if (hostConnections.get(conn.peer) !== conn) return;
               if (msg === 'REQUEST_STREAM' && localStream) {
                 if (activeCalls.has(conn.peer)) return;
-                const call = peer.call(conn.peer, localStream);
+                const call = peer.call(conn.peer, localStream, { sdpTransform: raiseStartBitrate });
                 if (!call) return;
                 activeCalls.set(conn.peer, call);
                 updateViewerCount();
@@ -569,6 +799,13 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
 
     function stopHostStream() {
       captureGeneration++;
+      // Encerrar apaga a mensagem do /tela para não poluir o chat.
+      if (localStream && HOST_STATUS) {
+        clearTimeout(statusTimer);
+        statusTimer = null;
+        lastStatusKey = 'ended';
+        sendHostStatus('ended');
+      }
       if (localStream) {
         localStream.getTracks().forEach(t => t.stop());
         localStream = null;
@@ -627,7 +864,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
 
       peer.on('call', (call) => {
         viewerMediaCall = call;
-        call.answer();
+        call.answer(undefined, { sdpTransform: raiseStartBitrate });
         watchForBlockedNetwork(call.peerConnection);
         call.on('stream', (remoteStream) => {
           if (viewerMediaCall !== call) return;
@@ -749,20 +986,22 @@ export default {
         if (!(await verifyRoomLink(secret, p))) return invalidLinkPage();
       }
 
+      const isHost = p.get('mode') === 'host';
       let inviteHref = '';
-      if (p.get('mode') === 'host') {
-        const view = viewUrlFromHost(url);
-        if (secret && p.get('exp')) view.searchParams.set('sig', await signLink(secret, room, Number(p.get('exp')), 'view'));
-        inviteHref = view.href;
+      if (isHost && secret && p.get('exp')) {
+        inviteHref = await viewUrlFor(url.origin, secret, room, p.get('title'), p.get('exp'));
       }
+      const hostStatus = isHost && !isLocal && Boolean(p.get('msg'));
 
-      const html = renderModernApp(room, p.get('mode'), p.get('title'), p.get('preview'), isLocal, inviteHref);
+      const html = renderModernApp(room, p.get('mode'), p.get('title'), p.get('preview'), isLocal, inviteHref, hostStatus);
       return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
     }
 
     if (request.method !== 'POST') {
       return new Response('Method not allowed', { status: 405, headers: { Allow: 'GET, HEAD, POST' } });
     }
+
+    if (url.pathname === '/api/status') return handleHostStatus(request, env, url.origin);
 
     // Interações do Discord.
     const publicKey = env?.DISCORD_PUBLIC_KEY;
@@ -785,7 +1024,7 @@ export default {
 
     if (interaction.type === 1) return Response.json({ type: 1 });
     if (interaction.type === 2 && interaction.data?.name === 'tela') {
-      return handleTelaCommand(interaction, url.origin, secret, ctx);
+      return handleTelaCommand(interaction, url.origin, secret, env, ctx);
     }
     return new Response('Comando não reconhecido', { status: 400 });
   }
