@@ -47,6 +47,7 @@ function fixture() {
   const script = source.match(/  <script>\r?\n([\s\S]*?)  <\/script>/)[1]
     .replace('${JSON.stringify(safeRoom)}', '"audience"')
     .replace('${JSON.stringify(safeMode)}', '"host"')
+    .replace('${JSON.stringify(inviteHref)}', '""')
     .replace('${JSON.stringify(isPreview ? preview : null)}', 'null');
   vm.runInContext(script, context);
   return { get, run: value => vm.runInContext(value, context), get copied() { return copied; },
