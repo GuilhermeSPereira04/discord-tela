@@ -1,0 +1,40 @@
+// Clip only decoration: hit areas and focus outlines remain intact.
+@mixin directional-fill {
+  position: relative; isolation: isolate; overflow: visible;
+  --button-motion-fill: var(--color-text);
+  --button-motion-ink: var(--color-canvas);
+  &::before { content: none; }
+  .button-motion-surface {
+    position: absolute; inset: var(--button-motion-inset, 0); z-index: 2;
+    overflow: hidden; border-radius: inherit; pointer-events: none;
+  }
+  .button-motion-wipe {
+    display: block; inline-size: 100%; block-size: 100%; position: relative;
+    background: var(--button-motion-fill); clip-path: inset(0 100% 0 0);
+    transition: clip-path var(--duration-label) var(--ease-label);
+  }
+  &[data-fill-state='hover']:not(:disabled) .button-motion-wipe { clip-path: inset(0); }
+  &[data-fill-state='out'] .button-motion-wipe { clip-path: inset(0 0 0 100%); }
+  &[data-fill-state='idle'] .button-motion-wipe { transition: none; }
+  .button-motion-content {
+    display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+    position: relative; z-index: 1; color: var(--color-text);
+  }
+  .button-motion-ink {
+    position: absolute; inset: 0; padding: var(--button-motion-padding, var(--space-3));
+    color: var(--button-motion-ink);
+  }
+  .button-motion-particles { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+  .button-motion-particle {
+    position: absolute; inset-block-start: 2px;
+    inline-size: var(--size-click-particle); block-size: var(--size-click-particle);
+    border-radius: 50%; background: var(--color-text); opacity: 0; pointer-events: none;
+  }
+  @supports not (clip-path: inset(0)) {
+    .button-motion-surface { display: none; }
+    &[data-fill-state='hover']:not(:disabled) {
+      background: var(--button-motion-fill);
+      .button-motion-content { color: var(--button-motion-ink); }
+    }
+  }
+}

@@ -1,0 +1,33 @@
+// Secondary action: the shared directional reveal paints only a 1 px contour.
+// Absolute decoration preserves the button's existing box and focus outline.
+#pip-btn {
+  background: transparent;
+  color: var(--color-muted);
+  transition: color var(--duration-fast) var(--ease-standard), opacity var(--duration-fast) var(--ease-standard);
+  &[aria-disabled='true'] { opacity: .75; }
+  &[data-fill-state='hover'] { color: var(--color-text); opacity: 1; }
+  &::before {
+    z-index: 0;
+    background: transparent;
+    border: 1px solid var(--color-line);
+    opacity: 1;
+    transition: border-color var(--duration-fast) var(--ease-standard);
+  }
+  .pip-border {
+    position: absolute;
+    inset: 0;
+    border: 1px solid var(--color-text);
+    border-radius: inherit;
+    pointer-events: none;
+    clip-path: inset(0 100% 0 0);
+    transition: clip-path var(--duration-label) var(--ease-label);
+  }
+  &[data-fill-state='hover'] .pip-border { clip-path: inset(0); }
+  &[data-fill-state='out'] .pip-border { clip-path: inset(0 0 0 100%); }
+  &[data-fill-state='idle'] .pip-border { transition: none; }
+  &.is-pip::before { border-color: var(--color-text); }
+}
+@supports not (clip-path: inset(0)) {
+  #pip-btn .pip-border { display: none; }
+  #pip-btn[data-fill-state='hover']::before { border-color: var(--color-text); }
+}

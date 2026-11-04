@@ -1,0 +1,35 @@
+# Dependências
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Variáveis de ambiente e segredos
+.env
+.env.*
+!.env.example
+.dev.vars
+
+# Cache da Cloudflare / Wrangler
+.wrangler/
+dist/
+styles/generated/
+public/diorama/
+artifacts/frontpush-research/
+
+# Arquivos compactados e temporários de deploy antigo
+*.zip
+gerar-zip-nuvem.bat
+discloud.config
+squarecloud.app
+
+# Sistema Operacional e Editores
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+*.log

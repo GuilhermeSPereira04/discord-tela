@@ -1,0 +1,18 @@
+name = "tnc-canja-tela"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+
+[assets]
+directory = "./public"
+
+[build]
+command = "npm run client:build"
+watch_dir = ["styles/src", "effects/diorama", "worker.js", "scripts/build-client.mjs", "scripts/build-diorama.mjs"]
+
+[[rules]]
+type = "Text"
+globs = ["**/*.css"]
+fallthrough = true
+
+[vars]
+DISCORD_PUBLIC_KEY = "8e45068f3cd1e86f40002cbe8de74a94cb44af4bd120ed79112df02f0dbd2e42"

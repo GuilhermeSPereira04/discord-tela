@@ -1,0 +1,164 @@
+@use '../abstracts/mixins' as m;
+
+// Draw/withdraw each contour independently. These states describe the configured
+// gain, not the amplitude of the media; there is no decorative equalizer loop.
+.audio-speaker, .audio-wave, .audio-slash {
+  transform-box: view-box;
+  transform-origin: 10px 12px;
+  transition: transform var(--duration-audio) var(--ease-audio-settle),
+    opacity var(--duration-icon) var(--ease-standard),
+    stroke-dashoffset var(--duration-audio) var(--ease-standard);
+}
+.audio-wave, .audio-slash { stroke-dasharray: 1; }
+.audio-wave {
+  stroke-dashoffset: 0;
+  visibility: visible;
+  // Keep the contour visible while it retracts; an early opacity fade hides
+  // most of the reverse drawing. Visibility changes only after the stroke ends.
+  transition: transform var(--duration-audio) var(--ease-audio-settle),
+    stroke-dashoffset var(--duration-audio) var(--ease-standard), visibility 0s;
+}
+.audio-wave--near { transition-delay: var(--duration-audio-stagger); }
+.audio-wave--far { transition-delay: calc(2 * var(--duration-audio-stagger)); }
+.audio-slash { stroke-dashoffset: 1; opacity: 0; transform: scale(.85); }
+[data-audio-level='low'] .audio-wave--far,
+.is-muted .audio-wave {
+  stroke-dashoffset: 1;
+  visibility: hidden;
+  transform: translateX(-1px) scaleY(.85);
+  transition-delay: 0s, 0s, var(--duration-audio);
+}
+.is-muted .audio-wave--near {
+  transition-delay: var(--duration-audio-stagger), var(--duration-audio-stagger),
+    calc(var(--duration-audio) + var(--duration-audio-stagger));
+}
+.is-muted .audio-speaker { transform: translateX(1px) rotate(-4deg) scale(.94); }
+.is-muted .audio-slash {
+  stroke-dashoffset: 0;
+  opacity: 1;
+  transform: scale(1);
+  transition-delay: var(--duration-audio-stagger);
+}
+#mute-btn:active .audio-speaker { transform: translateX(-.5px) scaleX(.88); }
+
+.volume-control {
+  --volume-ratio: 1;
+  --volume-tilt: 0deg;
+  --volume-hit-thumb: .375rem;
+  --volume-thumb-half: .1875rem;
+  --volume-position: calc(var(--volume-thumb-half) + (100% - var(--volume-hit-thumb)) * var(--volume-ratio));
+  position: relative;
+  inline-size: clamp(6rem, 14vw, 10rem);
+  min-inline-size: 3rem;
+  flex-shrink: 1;
+}
+.volume-rail, .volume-handle, .volume-fill { pointer-events: none; }
+.volume-rail {
+  position: absolute;
+  inset-inline: var(--volume-thumb-half);
+  inset-block-start: calc(50% - 1px);
+  block-size: 2px;
+  border-radius: 1px;
+  background: var(--color-line-strong);
+  transition: transform var(--duration-audio) var(--ease-audio-settle);
+}
+.volume-fill {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--color-text);
+  transform: scaleX(var(--volume-ratio));
+  transform-origin: left;
+  transition: opacity var(--duration-icon) var(--ease-standard);
+}
+.volume-handle {
+  position: absolute;
+  inset-inline-start: var(--volume-position);
+  inset-block-start: 50%;
+  inline-size: .25rem;
+  block-size: .75rem;
+  border-radius: .125rem;
+  background: var(--color-text);
+  transform: translate(-50%, -50%);
+  transition: transform var(--duration-audio) var(--ease-audio-settle), opacity var(--duration-icon) var(--ease-standard);
+}
+.volume-control output {
+  position: absolute;
+  inset-block-end: calc(100% - var(--space-2));
+  inset-inline-start: clamp(1.25rem, var(--volume-position), calc(100% - 1.25rem));
+  z-index: 3;
+  min-inline-size: 4ch;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-small);
+  background: var(--color-canvas);
+  color: var(--color-text);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  line-height: 1.2;
+  opacity: 0;
+  transform: translate(-50%, 4px);
+  pointer-events: none;
+  transition: opacity var(--duration-fast) var(--ease-standard), transform var(--duration-audio) var(--ease-audio-settle);
+}
+.player-audio input[type='range'] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  z-index: 2;
+  display: block;
+  min-inline-size: var(--player-target-size);
+  min-block-size: var(--player-target-size);
+  inline-size: 100%;
+  max-inline-size: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: ew-resize;
+  &::-webkit-slider-runnable-track { block-size: 2px; background: transparent; }
+  &::-moz-range-track { block-size: 2px; background: transparent; }
+  &::-moz-range-progress { background: transparent; }
+  &::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    inline-size: var(--volume-hit-thumb);
+    block-size: 1.5rem;
+    margin-block-start: calc(1px - .75rem);
+    border: 0;
+    background: transparent;
+  }
+  &::-moz-range-thumb { inline-size: var(--volume-hit-thumb); block-size: 1.5rem; border: 0; background: transparent; }
+  &:focus-visible ~ .volume-handle { transform: translate(-50%, -50%) scaleY(1.2); }
+  &:focus-visible ~ .volume-rail { transform: scaleY(1.5); }
+  &:focus-visible ~ output { opacity: 1; transform: translate(-50%, 0); }
+}
+.volume-control.is-adjusting {
+  .volume-handle {
+    transform: translate(-50%, -50%) rotate(var(--volume-tilt)) scale(1.25);
+    transition-duration: var(--duration-press);
+    transition-timing-function: var(--ease-standard);
+  }
+  .volume-rail { transform: scaleY(1.5); }
+  output { opacity: 1; transform: translate(-50%, 0); }
+}
+.is-silent .volume-fill, .is-silent .volume-handle { opacity: .5; }
+@media (hover: hover) and (pointer: fine) {
+  #mute-btn:not(.is-muted):hover .audio-wave--near { transform: translateX(.25px); }
+  #mute-btn:not(.is-muted):hover .audio-wave--far { transform: translateX(.75px); }
+  .volume-control:hover output { opacity: 1; transform: translate(-50%, 0); }
+}
+// A longer native track helps precise touch adjustment. It gets a dedicated row
+// on narrow portrait screens; the arrangement stays fixed throughout a drag.
+@media (width < 28rem) and (orientation: portrait) {
+  .controls-bar { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); padding-block-start: var(--space-2); }
+  .player-audio .volume-control { flex: 1; inline-size: auto; }
+  .player-actions .player-control { flex: 1 1 0; }
+  .player-actions .player-control--primary { flex-grow: 2; }
+}
+@include m.reduced-motion {
+  .audio-speaker, #mute-btn:active .audio-speaker { transform: none; }
+  .volume-handle,
+  .volume-control.is-adjusting .volume-handle,
+  .volume-control input:focus-visible ~ .volume-handle { transform: translate(-50%, -50%); }
+}
