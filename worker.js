@@ -1,40 +1,148 @@
 import appStyles from './styles/generated/app.css';
 
-const DEFAULT_PUBLIC_KEY = '8e45068f3cd1e86f40002cbe8de74a94cb44af4bd120ed79112df02f0dbd2e42';
-
-// Frontpush-inspired glass study: moving spheres pass through a sharp horizontal
-// band. Decorative only; connection status is still communicated by the heading.
 const CONNECTION_ORBS = '<span class="connection-orb connection-orb--light"></span><span class="connection-orb connection-orb--violet"></span>';
 const CONNECTION_SYMBOL = '<div class="connection-glass" aria-hidden="true"><div class="connection-field connection-field--diffuse">' + CONNECTION_ORBS + '</div><div class="connection-field connection-field--sharp">' + CONNECTION_ORBS + '</div></div>';
 
-async function verifyDiscordSignature(request, bodyText, publicKeyHex) {
-  const signature = request.headers.get('X-Signature-Ed25519');
-  const timestamp = request.headers.get('X-Signature-Timestamp');
-  if (!signature || !timestamp || !publicKeyHex) return false;
+const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+const MAX_ROOM_NAME = 100;
+const HEX_PATTERN = /^(?:[0-9a-f]{2})+$/i;
 
+function hexToBytes(hex) {
+  if (typeof hex !== 'string' || !HEX_PATTERN.test(hex)) return null;
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return bytes;
+}
+
+// A chave pública não muda entre requisições: importa uma vez por isolate.
+let cachedKey = null;
+async function getVerifyKey(publicKeyHex) {
+  if (cachedKey?.hex !== publicKeyHex) {
+    const raw = hexToBytes(publicKeyHex);
+    if (!raw || raw.length !== 32) throw new Error('DISCORD_PUBLIC_KEY inválida');
+    const key = await crypto.subtle.importKey('raw', raw, { name: 'Ed25519' }, false, ['verify']);
+    cachedKey = { hex: publicKeyHex, key };
+  }
+  return cachedKey.key;
+}
+
+async function verifyDiscordSignature(request, bodyText, publicKeyHex) {
+  const signature = hexToBytes(request.headers.get('X-Signature-Ed25519'));
+  const timestamp = request.headers.get('X-Signature-Timestamp');
+  if (!signature || signature.length !== 64 || !timestamp) return false;
   try {
-    const hexToBytes = (hex) => new Uint8Array(hex.match(/.{1,2}/g).map((b) => parseInt(b, 16)));
-    const key = await crypto.subtle.importKey(
-      'raw',
-      hexToBytes(publicKeyHex),
-      { name: 'Ed25519', namedCurve: 'Ed25519' },
-      false,
-      ['verify']
-    );
-    const message = new TextEncoder().encode(timestamp + bodyText);
-    return await crypto.subtle.verify('Ed25519', key, hexToBytes(signature), message);
+    const key = await getVerifyKey(publicKeyHex);
+    return await crypto.subtle.verify('Ed25519', key, signature, new TextEncoder().encode(timestamp + bodyText));
   } catch {
     return false;
   }
 }
 
 function randomHex(bytesLength) {
-  const arr = new Uint8Array(bytesLength);
-  crypto.getRandomValues(arr);
+  const arr = crypto.getRandomValues(new Uint8Array(bytesLength));
   return Array.from(arr, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-function renderModernApp(room, mode, title, preview, localPreviewEnabled = false) {
+const LINK_TTL_SECONDS = 24 * 60 * 60;
+const hmacKeys = new Map();
+
+function base64url(bytes) {
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function signLink(secret, room, exp, role) {
+  let key = hmacKeys.get(secret);
+  if (!key) {
+    key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    hmacKeys.set(secret, key);
+  }
+  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${room}.${exp}.${role}`));
+  return base64url(new Uint8Array(mac).slice(0, 16));
+}
+
+function safeEqual(a, b) {
+  if (typeof a !== 'string' || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+// Links assinados: só quem recebeu o link de transmitir consegue abrir o modo host,
+// e ambos deixam de abrir depois de LINK_TTL_SECONDS.
+async function buildRoomLinks(origin, secret, room, title) {
+  const exp = Math.floor(Date.now() / 1000) + LINK_TTL_SECONDS;
+  const base = `${origin}/?room=${room}&title=${encodeURIComponent(title)}&exp=${exp}`;
+  const [hostSig, viewSig] = await Promise.all([signLink(secret, room, exp, 'host'), signLink(secret, room, exp, 'view')]);
+  return {
+    hostUrl: `${base}&mode=host&sig=${hostSig}`,
+    viewUrl: `${base}&mode=view&sig=${viewSig}`
+  };
+}
+
+async function verifyRoomLink(secret, params) {
+  const room = params.get('room');
+  const role = params.get('mode') === 'host' ? 'host' : 'view';
+  const exp = Number(params.get('exp'));
+  if (!Number.isInteger(exp) || exp < Date.now() / 1000) return false;
+  return safeEqual(params.get('sig'), await signLink(secret, room, exp, role));
+}
+
+function viewUrlFromHost(url) {
+  const view = new URL(url);
+  view.searchParams.set('mode', 'view');
+  view.searchParams.delete('preview');
+  return view;
+}
+
+function invalidLinkPage() {
+  return new Response(
+    '<!DOCTYPE html><html lang="pt-BR"><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Link expirado</title>' +
+    '<body style="font-family:system-ui,sans-serif;background:#0b0b0f;color:#eee;display:grid;place-items:center;min-height:100vh;margin:0;text-align:center;padding:16px">' +
+    '<div><h1 style="font-weight:500">Link expirado ou inválido</h1><p>Use <strong>/tela</strong> no Discord para criar uma nova sala.</p></div></body></html>',
+    { status: 403, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+  );
+}
+
+async function sendHostLinkFollowup(interaction, hostUrl) {
+  const res = await fetch(`https://discord.com/api/v10/webhooks/${interaction.application_id}/${interaction.token}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      flags: 64, // efêmera: só quem usou o comando vê
+      content: 'Seu link para transmitir. Só você vê esta mensagem; não compartilhe.',
+      components: [{ type: 1, components: [linkButton('Transmitir', hostUrl, '📡')] }]
+    })
+  });
+  if (!res.ok) console.error('Falha ao enviar link do host:', res.status, await res.text());
+}
+
+function linkButton(label, url, emoji) {
+  return { type: 2, style: 5, label, url, emoji: { name: emoji } };
+}
+
+async function handleTelaCommand(interaction, origin, secret, ctx) {
+  const rawName = interaction.data.options?.find((o) => o.name === 'nome')?.value;
+  const customName = (typeof rawName === 'string' && rawName.trim().slice(0, MAX_ROOM_NAME)) || 'Sala de Tela';
+  const { hostUrl, viewUrl } = await buildRoomLinks(origin, secret, randomHex(6), customName);
+  const userId = interaction.member?.user?.id ?? interaction.user?.id;
+
+  // A resposta pública leva só o Assistir; o Transmitir vai em seguida, em mensagem efêmera.
+  ctx.waitUntil(sendHostLinkFollowup(interaction, hostUrl));
+
+  return Response.json({
+    type: 4,
+    data: {
+      embeds: [{
+        title: `🖥️  ${customName}`,
+        description: `Iniciada por <@${userId}> • **1080p 60fps**\nO link para transmitir foi enviado só para quem criou a sala.`,
+        color: 0x2b2d31
+      }],
+      components: [{ type: 1, components: [linkButton('Assistir', viewUrl, '👀')] }]
+    }
+  });
+}
+
+function renderModernApp(room, mode, title, preview, localPreviewEnabled = false, inviteHref = '') {
   const safeRoom = (room || 'default').replace(/[^a-zA-Z0-9_-]/g, '');
   const safeMode = mode === 'host' ? 'host' : 'view';
   const safeTitle = (title || 'Sala de Tela').replace(/[<>"]/g, '');
@@ -179,6 +287,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
   <script>
     const ROOM_ID = "canja_v2_" + ${JSON.stringify(safeRoom)};
     const MODE = ${JSON.stringify(safeMode)};
+    const INVITE_HREF = ${JSON.stringify(inviteHref)};
     const PREVIEW = ${JSON.stringify(isPreview ? preview : null)};
 
     function openViewerPreview(state) {
@@ -390,7 +499,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       cardBtn.onclick = startHostStream;
       videoEl.muted = true; // Host não ouve o próprio eco
       document.querySelector('.controls-bar').style.display = 'none';
-      const inviteUrl = new URL(window.location.href);
+      const inviteUrl = new URL(INVITE_HREF || window.location.href);
       inviteUrl.searchParams.set('mode', 'view');
       inviteUrl.searchParams.delete('preview');
       document.getElementById('copy-view-link').addEventListener('click', async () => {
@@ -684,88 +793,61 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    const secret = env?.HOST_LINK_SECRET;
+    const isLocal = LOCAL_HOSTS.has(url.hostname);
 
-    // 1. Quando alguém clica nos botões de Transmitir ou Assistir (GET), abre nossa interface limpa e moderna!
-    if (request.method === 'GET') {
-      const room = url.searchParams.get('room');
-      const mode = url.searchParams.get('mode');
-      const title = url.searchParams.get('title');
+    // Botões Transmitir/Assistir: serve a interface.
+    if (request.method === 'GET' || request.method === 'HEAD') {
+      const p = url.searchParams;
+      const room = p.get('room');
+      if (!room) return new Response('Bot de Tela ativo.', { status: 200 });
 
-      if (room) {
-        const preview = url.searchParams.get('preview');
-        const isLocal = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
-        return new Response(renderModernApp(room, mode, title, preview, isLocal), {
-          headers: { 'Content-Type': 'text/html; charset=utf-8' }
-        });
+      // No 127.0.0.1 os links de teste do README continuam abrindo sem assinatura.
+      if (!isLocal) {
+        if (!secret) return new Response('Servidor não configurado', { status: 500 });
+        if (!(await verifyRoomLink(secret, p))) return invalidLinkPage();
       }
-      return new Response('Bot de Tela (tnc canja) ativo na Cloudflare Workers!', { status: 200 });
+
+      let inviteHref = '';
+      if (p.get('mode') === 'host') {
+        const view = viewUrlFromHost(url);
+        if (secret && p.get('exp')) view.searchParams.set('sig', await signLink(secret, room, Number(p.get('exp')), 'view'));
+        inviteHref = view.href;
+      }
+
+      const html = renderModernApp(room, p.get('mode'), p.get('title'), p.get('preview'), isLocal, inviteHref);
+      return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
     }
 
     if (request.method !== 'POST') {
-      return new Response('Method not allowed', { status: 405 });
+      return new Response('Method not allowed', { status: 405, headers: { Allow: 'GET, HEAD, POST' } });
     }
 
-    // 2. Interações do Discord (POST)
+    // Interações do Discord.
+    const publicKey = env?.DISCORD_PUBLIC_KEY;
+    if (!publicKey || !secret) {
+      console.error('Configure DISCORD_PUBLIC_KEY e HOST_LINK_SECRET.');
+      return new Response('Servidor não configurado', { status: 500 });
+    }
+
     const bodyText = await request.text();
-    const publicKey = env?.DISCORD_PUBLIC_KEY || DEFAULT_PUBLIC_KEY;
-    const isValid = await verifyDiscordSignature(request, bodyText, publicKey);
-    if (!isValid) {
+    if (!(await verifyDiscordSignature(request, bodyText, publicKey))) {
       return new Response('Assinatura inválida', { status: 401 });
     }
 
-    const interaction = JSON.parse(bodyText);
-
-    if (interaction.type === 1) {
-      return Response.json({ type: 1 });
+    let interaction;
+    try {
+      interaction = JSON.parse(bodyText);
+    } catch {
+      return new Response('JSON inválido', { status: 400 });
     }
 
-    if (interaction.type === 2 && interaction.data.name === 'tela') {
-      const optionNome = interaction.data.options?.find((o) => o.name === 'nome')?.value;
-      const customName = optionNome || 'Sala de Tela';
-      const roomId = randomHex(6);
-      const baseUrl = `${url.protocol}//${url.host}`;
-
-      const hostUrl = `${baseUrl}/?room=${roomId}&mode=host&title=${encodeURIComponent(customName)}`;
-      const viewUrl = `${baseUrl}/?room=${roomId}&mode=view&title=${encodeURIComponent(customName)}`;
-      const userId = interaction.member?.user?.id || interaction.user?.id;
-
-      return Response.json({
-        type: 4,
-        data: {
-          embeds: [
-            {
-              title: `🖥️  ${customName}`,
-              description: `Iniciada por <@${userId}> • **1080p 60fps**`,
-              color: 0x2b2d31
-            }
-          ],
-          components: [
-            {
-              type: 1,
-              components: [
-                {
-                  type: 2,
-                  style: 5,
-                  label: 'Transmitir',
-                  url: hostUrl,
-                  emoji: { name: '📡' }
-                },
-                {
-                  type: 2,
-                  style: 5,
-                  label: 'Assistir',
-                  url: viewUrl,
-                  emoji: { name: '👀' }
-                }
-              ]
-            }
-          ]
-        }
-      });
+    if (interaction.type === 1) return Response.json({ type: 1 });
+    if (interaction.type === 2 && interaction.data?.name === 'tela') {
+      return handleTelaCommand(interaction, url.origin, secret, ctx);
     }
-
     return new Response('Comando não reconhecido', { status: 400 });
   }
 };

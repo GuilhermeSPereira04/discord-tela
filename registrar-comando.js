@@ -1,33 +1,19 @@
 require('dotenv').config();
-const { REST, Routes, SlashCommandBuilder } = require('discord.js');
+const { REST, Routes } = require('discord.js');
+const comandoTela = require('./comando-tela');
 
-const TOKEN = process.env.DISCORD_TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID;
-const ALLOWED_GUILD_ID = process.env.GUILD_ID;
+const { DISCORD_TOKEN, CLIENT_ID, GUILD_ID } = process.env;
 
-if (!TOKEN || !CLIENT_ID || !ALLOWED_GUILD_ID) {
+if (!DISCORD_TOKEN || !CLIENT_ID || !GUILD_ID) {
   console.error('❌ Preencha DISCORD_TOKEN, CLIENT_ID e GUILD_ID no arquivo .env antes de rodar!');
   process.exit(1);
 }
 
-const commands = [
-  new SlashCommandBuilder()
-    .setName('tela')
-    .setDescription('Cria uma sala privada no navegador para compartilhar tela (1080p 60fps)')
-    .addStringOption((opt) =>
-      opt.setName('nome').setDescription('Nome opcional para a sala').setRequired(false)
-    )
-].map((cmd) => cmd.toJSON());
-
-(async () => {
-  try {
-    console.log('⏳ Registrando o comando /tela no seu servidor privado...');
-    const rest = new REST({ version: '10' }).setToken(TOKEN);
-    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, ALLOWED_GUILD_ID), {
-      body: commands
-    });
-    console.log('✅ Comando /tela registrado com sucesso no seu servidor!');
-  } catch (err) {
+new REST({ version: '10' })
+  .setToken(DISCORD_TOKEN)
+  .put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: [comandoTela] })
+  .then(() => console.log('✅ Comando /tela registrado no seu servidor!'))
+  .catch((err) => {
     console.error('❌ Erro ao registrar comando:', err);
-  }
-})();
+    process.exitCode = 1;
+  });

@@ -44,7 +44,9 @@ Esse modo não precisa de token do Discord nem de login na Cloudflare. Clique em
 
 O PeerJS ainda precisa de internet para sinalização. O código atual configura STUN, sem TURN, então a conexão entre certas redes pode falhar. Resolução, taxa de quadros e áudio dependem do navegador, da fonte capturada, do equipamento e da rede; 1080p/60fps é uma meta, não uma qualidade garantida. Para acesso remoto à captura, use HTTPS.
 
-Para ativar o bot Node, copie `.env.example` para `.env`, preencha suas credenciais localmente e execute `npm start`. O Worker usa outra configuração: endpoint de interações no Discord e `DISCORD_PUBLIC_KEY` da sua aplicação. O valor que veio em `wrangler.toml` pertence à configuração original e precisa ser substituído ao configurar sua aplicação. Não publique tokens no Git.
+Para ativar o bot Node, copie `.env.example` para `.env`, preencha suas credenciais localmente, registre o comando com `node registrar-comando.js` e execute `npm start`. O Worker usa outra configuração: endpoint de interações no Discord, `DISCORD_PUBLIC_KEY` da sua aplicação e o segredo `HOST_LINK_SECRET` (configure com `npx wrangler secret put HOST_LINK_SECRET`). O valor que veio em `wrangler.toml` pertence à configuração original e precisa ser substituído ao configurar sua aplicação. Não publique tokens no Git.
+
+No Worker, os links de host e espectador têm assinaturas diferentes e expiram após 24 horas. O comando publica apenas **Assistir**; o link **Transmitir** é enviado em mensagem efêmera ao criador. O convite copiado na interface recebe a assinatura de espectador. A exceção sem assinatura existe apenas nos endereços locais de desenvolvimento. O bot Node mantém seu fluxo separado de links VDO.Ninja.
 
 ---
 
