@@ -61,10 +61,19 @@ test('host starts with no invented spectators; media audio indicator is truthful
   const f = fixture();
   await f.run('startHostStream()');
   assert.equal(f.get('audience-list').children.length, 0);
-  assert.equal(f.get('host-audio-status').textContent, 'Sem áudio compartilhado');
+  assert.equal(f.get('host-audio-label').textContent, 'Sem áudio compartilhado');
+  assert.equal(f.get('host-audio-status').dataset.audio, 'off');
   assert.equal(f.get('status-text').textContent, 'Preparando a sala');
   f.run('peer').emit('open');
   assert.equal(f.get('status-text').textContent, 'Ao vivo');
+  f.run(`const captureWithoutAudio = navigator.mediaDevices.getDisplayMedia;
+    navigator.mediaDevices.getDisplayMedia = async () => ({
+      ...await captureWithoutAudio(),
+      getAudioTracks: () => [{ kind: 'audio' }]
+    });`);
+  await f.run('startHostStream()');
+  assert.equal(f.get('host-audio-label').textContent, 'Áudio compartilhado');
+  assert.equal(f.get('host-audio-status').dataset.audio, 'on');
 });
 
 test('repeated stream requests create a single audience member and media call', async () => {
@@ -120,7 +129,8 @@ test('ending resets the real audience and a new session starts with spectator 01
   assert.equal(oldCall.closed, true);
   assert.equal(f.get('viewer-count').textContent, '0');
   assert.equal(f.get('host-actions').hidden, true);
-  assert.equal(f.get('host-audio-status').hidden, true);
+  assert.equal(f.get('host-audio-label').textContent, '');
+  assert.match(f.get('host-feedback').textContent, /^Compartilhamento encerrado/);
   await f.run('startHostStream()');
   f.connect('new-viewer').emit('data', 'REQUEST_STREAM');
   oldCall.emit('close');
@@ -155,4 +165,18 @@ test('focus follows entry and exit without jumping again during a screen swap', 
   f.run('stopHostStream()');
   assert.equal(exits, 1);
   assert.equal(f.run('window.scrolls'), 2);
+});
+
+test('cancelling a source change keeps the stream live and reports beside its controls', async () => {
+  const f = fixture();
+  await f.run('startHostStream()');
+  const originalStream = f.run('localStream');
+  f.run(`navigator.mediaDevices.getDisplayMedia = async () => {
+    throw Object.assign(new Error('Cancelled'), { name: 'NotAllowedError' });
+  }`);
+  await f.run('startHostStream()');
+  assert.equal(f.run('localStream'), originalStream);
+  assert.equal(f.get('host-actions').hidden, false);
+  assert.match(f.get('host-live-feedback').textContent, /^Seleção cancelada/);
+  assert.equal(f.get('host-feedback').hidden, true);
 });

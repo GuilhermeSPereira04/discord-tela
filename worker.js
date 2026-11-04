@@ -54,40 +54,81 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
   <style>${appStyles}</style>
 </head>
 <body class="${safeMode === 'view' ? 'viewer' : 'host'} ${isPreview ? 'viewer-preview' : ''}">
-  <header>
-    <div class="brand">
-      <span class="room-title">${safeTitle}</span>
-      <span id="status-badge" class="badge">
-        <span id="status-text" role="status" aria-live="polite" aria-atomic="true">Aguardando</span>
-      </span>
-    </div>
-    <div class="header-right" id="host-actions" hidden>
-      <button id="change-screen-btn" class="btn motion-button" data-button-motion style="display:none" onclick="startHostStream()"><span class="button-motion-content">Trocar Tela</span></button>
-      <button id="stop-stream-btn" class="btn motion-button motion-button--danger" data-button-motion style="display:none" onclick="stopHostStream()"><span class="button-motion-content">Encerrar</span></button>
-    </div>
-  </header>
-
-  ${showPreviewNav ? `<nav class="preview-nav" aria-label="Prévia dos estados do espectador">
-    <span>Prévia da interface${isPreview ? ' · sem transmissão real' : ''}</span>
-    <button class="btn secondary motion-link" aria-pressed="${preview === 'waiting'}" onclick="openViewerPreview('waiting')"><span class="motion-label"><span class="motion-track"><span>Conectando</span><span aria-hidden="true">Conectando</span></span></span></button>
-    <button class="btn secondary motion-link" aria-pressed="${preview === 'connected'}" onclick="openViewerPreview('connected')"><span class="motion-label"><span class="motion-track"><span>Conectado</span><span aria-hidden="true">Conectado</span></span></span></button>
-    ${isPreview ? '<a id="exit-preview" class="motion-link" href="#"><span class="motion-label"><span class="motion-track"><span>Sair da prévia</span><span aria-hidden="true">Sair da prévia</span></span></span></a>' : ''}
-  </nav>` : ''}
-
   ${safeMode === 'host' ? '<div class="host-workspace">' : ''}
   <main>
-    ${safeMode === 'host' ? '<div class="host-live-heading"><h1 id="host-live-title" tabindex="-1">Sua transmissão.</h1><span>Prévia da tela</span></div>' : ''}
     <!-- Card Inicial -->
     <div id="state-card" class="state-card">
       <div class="state-icon" id="card-icon" aria-hidden="true">${safeMode === 'host' ? '<div id="host-diorama" class="host-diorama" data-state="loading"><img data-src="/diorama/poster.jpg" width="224" height="224" alt="" decoding="async"></div>' : CONNECTION_SYMBOL}</div>
-      <h2 id="card-title">Carregando...</h2>
+      <h1 id="card-title">Carregando...</h1>
       <p id="card-desc">Preparando conexão P2P direta.</p>
-      <button id="card-btn" class="btn full player-control motion-button" data-button-motion data-click-particles="true" data-fill-state="idle" style="display:none"><span class="player-control-content"><span id="host-start-label">Selecionar tela</span></span></button>
+      <button id="card-btn" class="btn full player-control motion-button" data-button-motion data-click-particles="true" data-fill-state="idle" type="button" style="display:none"><span class="player-control-content">Selecionar tela</span></button>
       ${safeMode === 'host' ? '<p id="host-feedback" class="host-feedback" role="status" hidden></p>' : ''}
     </div>
 
+    ${safeMode === 'host' ? `<div id="host-actions" class="host-capture-panel" hidden>
+      <h1 id="host-live-title" tabindex="-1">Sua transmissão.</h1>
+      <div class="host-capture-bar">
+        <div class="host-capture-status">
+          <div class="host-live-status">
+            <span id="status-text" role="status"></span>
+            <button class="host-live-emblem" type="button" aria-label="Mangekyō Eterno do Sasuke" aria-pressed="false">
+            <span class="host-live-eye-art" aria-hidden="true">
+            <svg class="host-live-eye" viewBox="0 0 28 20">
+              <defs>
+                <path id="host-eye-shape" d="M1.5 10C8 1.5 20 1.5 26.5 10C20 18.5 8 18.5 1.5 10Z"/>
+                <clipPath id="host-eye-aperture"><use href="#host-eye-shape"/></clipPath>
+                <path id="host-eye-tomoe" d="M13.4 4.4C15.2 4.1 16.2 5.5 15.54 6.55C15.14 7.19 14.28 7.31 13.74 6.86C13.2 6.41 13.31 5.65 13.84 5.35C13.75 4.97 13.59 4.7 13.4 4.4Z"/>
+              </defs>
+              <use href="#host-eye-shape" fill="#321b21"/>
+              <g clip-path="url(#host-eye-aperture)">
+                <g class="host-live-iris">
+                  <circle cx="14" cy="10" r="6.55" fill="currentColor"/>
+                  <circle cx="14" cy="10" r="4.45" fill="none" stroke="#401018" stroke-width=".55"/>
+                  <g class="host-eye-tomoe" fill="#19090d">
+                    <circle cx="14" cy="10" r="1.65"/>
+                    <use href="#host-eye-tomoe"/>
+                    <use href="#host-eye-tomoe" transform="rotate(120 14 10)"/>
+                    <use href="#host-eye-tomoe" transform="rotate(240 14 10)"/>
+                  </g>
+                  <g class="host-eye-mangekyo">
+                    <circle cx="14" cy="10" r="6.55" fill="#19090d"/>
+                    <path id="host-eye-mangekyo-triangle" d="M14 4Q16.75 6.6 19.2 13Q14 14.2 8.8 13Q11.25 6.6 14 4Z" fill="#ff525f" stroke="#321019" stroke-width=".35"/>
+                    <use href="#host-eye-mangekyo-triangle" transform="rotate(180 14 10)"/>
+                    <path id="host-eye-eternal-blade" d="M12.75 10Q12.9 13.25 14 14.9Q15.1 13.25 15.25 10Z" fill="#19090d"/>
+                    <use href="#host-eye-eternal-blade" transform="rotate(120 14 10)"/>
+                    <use href="#host-eye-eternal-blade" transform="rotate(240 14 10)"/>
+                    <circle cx="14" cy="10" r=".92" fill="#ff525f"/>
+                  </g>
+                </g>
+              </g>
+              <use href="#host-eye-shape" fill="none" stroke="currentColor" stroke-width="1.15"/>
+            </svg>
+            </span>
+            </button>
+          </div>
+          <p id="host-audio-status" role="status">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M11 5 6 9H3v6h3l5 4Z"/>
+              <path class="host-audio-wave" d="M15 9a4 4 0 0 1 0 6"/>
+              <path class="host-audio-wave host-audio-wave--far" d="M18 6a8 8 0 0 1 0 12"/>
+              <path class="host-audio-off" d="m15 9 6 6m0-6-6 6"/>
+            </svg>
+            <span id="host-audio-label"></span>
+          </p>
+        </div>
+        <div class="host-capture-buttons" role="group" aria-label="Controles do compartilhamento">
+          <button id="change-screen-btn" class="btn motion-button" data-button-motion type="button" onclick="startHostStream()">
+            <span class="button-motion-content"><svg class="host-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h15m-4-4 4 4-4 4"/><path d="M20 16H5m4-4-4 4 4 4"/></svg>Trocar fonte</span>
+          </button>
+          <button id="stop-stream-btn" class="btn motion-button host-stop-sharing" data-button-motion type="button" onclick="stopHostStream()">
+            <span class="button-motion-content"><svg class="host-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Parar compartilhamento</span>
+          </button>
+        </div>
+        <p id="host-live-feedback" class="host-live-feedback" role="status"></p>
+      </div>
+    </div>` : ''}
     <!-- Player de Vídeo -->
-    <div id="video-wrapper" data-preview="${isPreview}" data-state="waiting" role="region" aria-label="Player da transmissão">
+    <div id="video-wrapper" data-preview="${isPreview}" data-state="waiting" role="region" aria-label="${safeMode === 'host' ? 'Prévia da tela compartilhada' : 'Player da transmissão'}">
       <div class="player-stage">
         <button id="unmute-toast" class="btn unmute-toast" hidden>Ativar o som</button>
         <video id="screen-video" aria-label="Vídeo da transmissão" autoplay playsinline ${isPreview ? 'hidden aria-hidden="true"' : ''}></video>
@@ -126,9 +167,14 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
     <div id="audience-empty" class="audience-empty"><p>Ninguém conectado ainda.</p><span>Envie o link para quem vai assistir.</span></div>
     <ul id="audience-list" class="audience-list" aria-label="Espectadores conectados"></ul>
     <p id="audience-identity" class="audience-caption" hidden>Os nomes não são informados pelo link de acesso.</p>
-    <div class="host-invite"><button id="copy-view-link" class="host-copy-link motion-button" data-button-motion type="button"><span class="button-motion-content">Copiar link para assistir <span aria-hidden="true">↗</span></span></button><p id="copy-feedback" class="audience-caption" role="status" hidden></p><input id="view-link-fallback" class="view-link-fallback" aria-label="Link para assistir" readonly hidden></div>
-    <p id="host-audio-status" class="host-audio-status" hidden></p>
+    <div class="host-invite"><button id="copy-view-link" class="host-copy-link motion-button" data-button-motion type="button"><span class="button-motion-content"><svg class="host-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2"/></svg>Copiar link de convite</span></button><p id="copy-feedback" class="audience-caption" role="status" hidden></p><input id="view-link-fallback" class="view-link-fallback" aria-label="Link para assistir" readonly hidden></div>
   </aside></div>` : ''}
+  ${showPreviewNav ? `<nav class="preview-nav" aria-label="Prévia dos estados do espectador">
+    <span>Prévia da interface${isPreview ? ' · sem transmissão real' : ''}</span>
+    <button class="btn secondary motion-link" aria-pressed="${preview === 'waiting'}" onclick="openViewerPreview('waiting')"><span class="motion-label"><span class="motion-track"><span>Conectando</span><span aria-hidden="true">Conectando</span></span></span></button>
+    <button class="btn secondary motion-link" aria-pressed="${preview === 'connected'}" onclick="openViewerPreview('connected')"><span class="motion-label"><span class="motion-track"><span>Conectado</span><span aria-hidden="true">Conectado</span></span></span></button>
+    ${isPreview ? '<a id="exit-preview" class="motion-link" href="#"><span class="motion-label"><span class="motion-track"><span>Sair da prévia</span><span aria-hidden="true">Sair da prévia</span></span></span></a>' : ''}
+  </nav>` : ''}
 
   <script>
     const ROOM_ID = "canja_v2_" + ${JSON.stringify(safeRoom)};
@@ -147,7 +193,6 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       document.getElementById('exit-preview').href = realUrl.href;
     }
 
-    const statusBadge = document.getElementById('status-badge');
     const statusText = document.getElementById('status-text');
     const viewerCountEl = document.getElementById('viewer-count');
     const stateCard = document.getElementById('state-card');
@@ -158,14 +203,15 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
     const videoWrapper = document.getElementById('video-wrapper');
     const videoEl = document.getElementById('screen-video');
     const changeScreenBtn = document.getElementById('change-screen-btn');
-    const stopStreamBtn = document.getElementById('stop-stream-btn');
     const unmuteToast = document.getElementById('unmute-toast');
     const hostActions = document.getElementById('host-actions');
     const audienceList = document.getElementById('audience-list');
     const audienceEmpty = document.getElementById('audience-empty');
     const audienceIdentity = document.getElementById('audience-identity');
     const hostFeedback = document.getElementById('host-feedback');
+    const hostLiveFeedback = document.getElementById('host-live-feedback');
     const hostAudioStatus = document.getElementById('host-audio-status');
+    const hostAudioLabel = document.getElementById('host-audio-label');
 
     let peer = null;
     let localStream = null;
@@ -202,11 +248,8 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
 
     function setLiveStatus(isLive, text) {
       statusText.textContent = text;
-      if (isLive) {
-        statusBadge.classList.add('live');
-      } else {
-        statusBadge.classList.remove('live');
-      }
+      statusText.classList.toggle('live', isLive);
+      statusText.dispatchEvent(new Event('hostlivestatuschange'));
     }
 
     function setWaitingMessage(title, description) {
@@ -256,8 +299,9 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
     }
 
     function showHostFeedback(message) {
-      hostFeedback.textContent = message;
-      hostFeedback.hidden = !message;
+      const feedback = localStream ? hostLiveFeedback : hostFeedback;
+      feedback.textContent = message;
+      if (feedback === hostFeedback) feedback.hidden = !message;
     }
 
     // Aumenta o bitrate do WebRTC para 1080p 60fps nítido
@@ -280,10 +324,8 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
     if (MODE === 'host') {
       cardTitle.replaceChildren(document.createTextNode('Compartilhe'), document.createElement('br'), document.createTextNode('sua tela.'));
       cardDesc.textContent = 'Escolha uma tela, janela ou aba. Para transmitir som, ative o áudio na seleção.';
-      document.getElementById('host-start-label').textContent = 'Selecionar tela';
       cardBtn.style.display = 'inline-flex';
       cardBtn.onclick = startHostStream;
-      setLiveStatus(false, 'Pronto para transmitir');
       videoEl.muted = true; // Host não ouve o próprio eco
       document.querySelector('.controls-bar').style.display = 'none';
       const inviteUrl = new URL(window.location.href);
@@ -344,12 +386,11 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
 
         videoEl.srcObject = localStream;
         videoWrapper.dispatchEvent(new Event('playerstreamchange'));
-        showPlayer();
-        changeScreenBtn.style.display = 'inline-flex';
-        stopStreamBtn.style.display = 'inline-flex';
         hostActions.hidden = false;
-        hostAudioStatus.hidden = false;
-        hostAudioStatus.textContent = localStream.getAudioTracks().length ? 'Áudio compartilhado' : 'Sem áudio compartilhado';
+        showPlayer();
+        const hasSharedAudio = localStream.getAudioTracks().length > 0;
+        hostAudioStatus.dataset.audio = hasSharedAudio ? 'on' : 'off';
+        hostAudioLabel.textContent = hasSharedAudio ? 'Áudio compartilhado' : 'Sem áudio compartilhado';
         setLiveStatus(Boolean(peer?.open), peer?.open ? 'Ao vivo' : 'Preparando a sala');
 
         videoTrack.onended = () => stopHostStream();
@@ -382,7 +423,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
           hostPeer.on('error', () => {
             if (peer !== hostPeer) return;
             setLiveStatus(false, 'Falha na conexão');
-            hostAudioStatus.textContent = 'A sala não pôde conectar. Encerre e tente novamente.';
+            showHostFeedback('A sala não pôde conectar. Pare o compartilhamento e tente novamente.');
           });
           hostPeer.on('disconnected', () => {
             if (peer === hostPeer) setLiveStatus(false, 'Sala desconectada');
@@ -425,6 +466,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
           });
         }
       } catch (err) {
+        if (captureId !== captureGeneration) return;
         showHostFeedback(err.name === 'NotAllowedError' ? 'Seleção cancelada. Você pode tentar novamente.' :
           'Não foi possível compartilhar a tela. Verifique a permissão e o suporte do navegador.');
       } finally {
@@ -451,15 +493,14 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
         peer.destroy();
         peer = null;
       }
+      setLiveStatus(false, '');
       hidePlayer();
-      changeScreenBtn.style.display = 'none';
-      stopStreamBtn.style.display = 'none';
       hostActions.hidden = true;
-      hostAudioStatus.hidden = true;
+      delete hostAudioStatus.dataset.audio;
+      hostAudioLabel.textContent = '';
+      hostLiveFeedback.textContent = '';
       videoEl.srcObject = null;
-      showHostFeedback('Você pode selecionar uma tela para transmitir novamente.');
-      stateCard.style.display = '';
-      setLiveStatus(false, 'Encerrado');
+      showHostFeedback('Compartilhamento encerrado. Você pode selecionar uma tela novamente.');
       cardBtn.focus?.({ preventScroll: true });
       window.scrollTo?.({ top: 0, behavior: 'instant' });
     }
@@ -473,7 +514,6 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
         document.body.classList.toggle('is-connecting', !connected);
         if (connected) showPlayer();
         else hidePlayer();
-        setLiveStatus(false, connected ? 'Conectado · prévia' : 'Conectando · prévia');
       } else {
         initViewer();
       }
@@ -507,7 +547,6 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
           viewerConnected = true;
           document.body.classList.remove('is-connecting');
           showPlayer();
-          setLiveStatus(true, 'Ao vivo');
 
           videoEl.play().catch(() => {
             videoEl.muted = true;
@@ -550,7 +589,6 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       } else {
         setWaitingMessage('Aguardando transmissão', 'A transmissão foi pausada ou ainda não começou. Reconectando automaticamente...');
       }
-      setLiveStatus(false, 'Aguardando');
       if (!retryTimer) {
         retryTimer = setInterval(connectToHost, 2500);
       }
@@ -563,11 +601,13 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
   </script>
   ${safeMode === 'host' ? `<script type="module">
     import { attachHostDiorama } from '/host-diorama.mjs';
+    import { attachHostLiveEye } from '/host-live-eye.mjs';
     import { attachButtonMotion } from '/button-motion.mjs';
     document.querySelectorAll('[data-button-motion]').forEach(button => {
       attachButtonMotion(button, document, { particles: button.dataset.clickParticles === 'true' });
     });
     attachHostDiorama(document.getElementById('host-diorama'), document.getElementById('video-wrapper'));
+    attachHostLiveEye(document.querySelector('.host-live-emblem'), document.getElementById('status-text'));
   </script>` : ''}
 </body>
 </html>`;

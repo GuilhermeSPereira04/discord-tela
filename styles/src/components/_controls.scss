@@ -24,6 +24,3 @@
   &.full { inline-size: 100%; }
   &:disabled { opacity: .45; cursor: not-allowed; }
 }
-@include m.below('compact') {
-  .header-right .btn { flex: 1 1 auto; }
-}

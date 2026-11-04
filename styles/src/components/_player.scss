@@ -7,15 +7,6 @@
   block-size: 100dvh;
   min-block-size: 16rem;
 }
-.viewer.player-active .brand { flex-wrap: nowrap; }
-.viewer.player-active .room-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  letter-spacing: -.02em;
-}
-.viewer.player-active .badge { flex-shrink: 0; }
-.viewer.player-active header { padding-block-start: max(var(--space-4), env(safe-area-inset-top)); }
 .player-active main {
   display: flex;
   align-items: stretch;
@@ -245,8 +236,7 @@
   .player-actions .player-control--primary { flex-grow: 2; }
 }
 @media (height < 30rem) and (width >= 40rem) {
-  .viewer.player-active header { min-block-size: 3rem; padding-block-start: max(var(--space-2), env(safe-area-inset-top)); padding-block-end: var(--space-2); }
-  .viewer.player-active .preview-nav { padding-block: 0; }
+  .viewer.player-active .preview-nav { padding-block-start: 0; }
   .controls-bar { padding-block-start: var(--space-2); padding-block-end: max(var(--space-2), env(safe-area-inset-bottom)); }
   .preview-frame p, .player-waiting p { margin-block-start: var(--space-2); }
 }
