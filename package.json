@@ -4,6 +4,12 @@
   "description": "Bot privado de Discord para gerar salas de compartilhamento de tela P2P via navegador (VDO.Ninja)",
   "main": "index.js",
   "scripts": {
+    "dev": "wrangler dev --ip 127.0.0.1 --port 8787",
+    "styles:build": "sass --no-source-map --style=compressed styles/src/app.scss styles/generated/app.css",
+    "assets:build": "node scripts/build-diorama.mjs",
+    "client:build": "node scripts/build-client.mjs",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "test": "node --test tests/*.test.mjs",
     "start": "node index.js"
   },
   "dependencies": {
@@ -12,5 +18,12 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "sass": "^1.107.1",
+    "sharp": "0.35.5",
+    "three": "0.187.0",
+    "wrangler": "^4.157.0"
   }
 }

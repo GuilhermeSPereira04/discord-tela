@@ -1,0 +1,62 @@
+{
+  "checkedAt": "2026-11-03T19:10:12.872Z",
+  "assets": [
+    {
+      "path": "reference/assets/tex/leafy_grass.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/leafy_grass/leafy_grass_diff_1k.jpg",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/leafy_grass",
+      "bytes": 1195394,
+      "sha256": "cfa40bc9d9417d1852db8753a8d5917f110c40101179f63543c382e39bc05e4a"
+    },
+    {
+      "path": "reference/assets/tex/coast_sand_01.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/coast_sand_01/coast_sand_01_diff_1k.jpg",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/coast_sand_01",
+      "bytes": 960614,
+      "sha256": "58af2e40100f7f405703a86d593af64379f822c4786850def23ecfc921450d54"
+    },
+    {
+      "path": "reference/assets/tex/aerial_rocks_02.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/aerial_rocks_02/aerial_rocks_02_diff_1k.jpg",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/aerial_rocks_02",
+      "bytes": 785923,
+      "sha256": "708373b2af7fd07ac8de1500556006aaf904c41a99985a849cacc78874f38eac"
+    },
+    {
+      "path": "reference/assets/tex/castle_wall_slates.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/castle_wall_slates/castle_wall_slates_diff_1k.jpg",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/castle_wall_slates",
+      "bytes": 625282,
+      "sha256": "1c42fe616560553caf8f61f298750e6a2cee06bf2a4af9156a930057d02da003"
+    },
+    {
+      "path": "reference/assets/tex/weathered_planks.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/weathered_planks/weathered_planks_diff_1k.jpg",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/weathered_planks",
+      "bytes": 599581,
+      "sha256": "01c9a372cfd7a7bf471b59c2458ed3ccecc93448aebf7ba0cc5b3b5b6ed24349"
+    },
+    {
+      "path": "reference/assets/tex/bark_brown_02.jpg",
+      "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/bark_brown_02/bark_brown_02_diff_1k.jpg",
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/bark_brown_02",
+      "bytes": 659592,
+      "sha256": "920fa0bed0c9d78c1d530e99795113afd532d7db746de440f4a85d7c83ed0f1a"
+    },
+    {
+      "path": "reference/assets/models/Fox.glb",
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Fox/glTF-Binary/Fox.glb",
+      "license": "Model CC0-1.0; rig/animation/conversion CC-BY-4.0",
+      "source": "https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/Fox",
+      "credit": "PixelMannen (model); tomkranis (rig and animation); @AsoboStudio and @scurest (glTF conversion)",
+      "bytes": 162852,
+      "sha256": "d97044e701822bac5a62696459b27d7b375aada5de8574ed4362edbba94771f7"
+    }
+  ]
+}
