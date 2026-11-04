@@ -287,6 +287,29 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
     let viewerConnected = false;
     let viewerMediaCall = null;
     let viewerDataConnection = null;
+    let viewerAttemptStartedAt = 0;
+    // Entre redes diferentes a negociação pode levar vários segundos: uma tentativa
+    // nova só substitui a anterior depois deste prazo, senão uma derruba a outra.
+    const VIEWER_ATTEMPT_TIMEOUT_MS = 15000;
+    // Só vira true quando o transmissor está na sala e a conexão direta falha:
+    // é o sinal de que a rede (de um dos lados) está bloqueando.
+    let networkBlocked = false;
+
+    function showNetworkHint() {
+      if (networkBlocked || viewerConnected) return;
+      networkBlocked = true;
+      setWaitingMessage(
+        'Não foi possível conectar',
+        'A transmissão está no ar, mas sua rede ou a de quem transmite pode estar bloqueando a conexão direta. Tente outra rede, como o 4G/5G do celular. Seguimos tentando automaticamente.'
+      );
+      setLiveStatus(false, 'Rede bloqueando');
+    }
+
+    function watchForBlockedNetwork(peerConnection) {
+      peerConnection?.addEventListener?.('connectionstatechange', () => {
+        if (peerConnection.connectionState === 'failed') showNetworkHint();
+      });
+    }
 
     function showPlayer(state = 'connected') {
       const enteringHost = MODE === 'host' && stateCard.style.display !== 'none';
@@ -605,6 +628,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       peer.on('call', (call) => {
         viewerMediaCall = call;
         call.answer();
+        watchForBlockedNetwork(call.peerConnection);
         call.on('stream', (remoteStream) => {
           if (viewerMediaCall !== call) return;
           if (retryTimer) {
@@ -614,6 +638,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
           videoEl.srcObject = remoteStream;
           videoWrapper.dispatchEvent(new Event('playerstreamchange'));
           viewerConnected = true;
+          networkBlocked = false;
           document.body.classList.remove('is-connecting');
           showPlayer();
           setLiveStatus(true, 'Ao vivo');
@@ -630,8 +655,16 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
         });
       });
 
-      peer.on('error', () => {
-        // Host ainda não entrou; tenta reconectar a cada 2.5s automaticamente
+      peer.on('error', (err) => {
+        // Host ainda não entrou: a tentativa falhou de vez, então a próxima pode sair já.
+        if (err?.type === 'peer-unavailable') {
+          viewerDataConnection = null;
+          if (networkBlocked) {
+            networkBlocked = false;
+            handleHostDisconnect();
+          }
+        }
+        // Tenta reconectar a cada 2.5s automaticamente
         if (!retryTimer) {
           retryTimer = setInterval(connectToHost, 2500);
         }
@@ -640,13 +673,29 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
 
     function connectToHost() {
       if (!peer || peer.destroyed || viewerConnected) return;
+      const pending = viewerDataConnection;
+      if (pending && Date.now() - viewerAttemptStartedAt < VIEWER_ATTEMPT_TIMEOUT_MS) return;
+      if (pending) {
+        if (!pending.open) showNetworkHint();
+        viewerDataConnection = null;
+        pending.close();
+      }
+      viewerAttemptStartedAt = Date.now();
       const conn = peer.connect(ROOM_ID, { reliable: true });
       viewerDataConnection = conn;
+      watchForBlockedNetwork(conn.peerConnection);
       conn.on('open', () => {
         conn.send('REQUEST_STREAM');
       });
       conn.on('close', () => {
-        if (viewerDataConnection === conn) handleHostDisconnect();
+        if (viewerDataConnection !== conn) return;
+        viewerDataConnection = null;
+        handleHostDisconnect();
+      });
+      conn.on('error', () => {
+        if (viewerDataConnection !== conn) return;
+        viewerDataConnection = null;
+        conn.close();
       });
     }
 
@@ -656,10 +705,10 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
         // Preserve the fullscreen root, the video element and the exit control.
         // Presentation remains open while retries depend on actual connection state.
         showPlayer('waiting');
-      } else {
+      } else if (!networkBlocked) {
         setWaitingMessage('Aguardando transmissão', 'A transmissão foi pausada ou ainda não começou. Reconectando automaticamente...');
       }
-      setLiveStatus(false, 'Aguardando');
+      if (!networkBlocked) setLiveStatus(false, 'Aguardando');
       if (!retryTimer) {
         retryTimer = setInterval(connectToHost, 2500);
       }
