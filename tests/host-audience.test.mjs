@@ -67,6 +67,7 @@ function fixture(mode = 'host') {
     .replace('${JSON.stringify(safeRoom)}', '"audience"')
     .replace('${JSON.stringify(safeMode)}', JSON.stringify(mode))
     .replace('${JSON.stringify(inviteHref)}', '""')
+    .replace('${JSON.stringify(hostStatus)}', 'false')
     .replace('${JSON.stringify(isPreview ? preview : null)}', 'null');
   vm.runInContext(script, context);
   return { get, run: value => vm.runInContext(value, context), get copied() { return copied; },
@@ -285,6 +286,10 @@ test('host and viewer reconnect signalling while obsolete connections cannot dis
   assert.equal(viewerPeer.reconnects, 1);
   viewerPeer.emit('open');
   const previous = viewer.run('viewerDataConnection');
+  viewer.run('connectToHost()');
+  assert.equal(viewer.run('viewerDataConnection'), previous);
+  assert.equal(viewerPeer.connections.length, 1);
+  viewer.run('viewerAttemptStartedAt -= VIEWER_ATTEMPT_TIMEOUT_MS');
   viewer.run('connectToHost()');
   const current = viewer.run('viewerDataConnection');
   assert.equal(previous.closed, true);

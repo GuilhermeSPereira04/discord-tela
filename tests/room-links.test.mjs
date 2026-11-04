@@ -11,7 +11,7 @@ const source = fs.readFileSync(new URL('../worker.js', import.meta.url), 'utf8')
 const secret = 'test-only-room-link-secret';
 function fixture() {
   const sent = [], pending = [];
-  const context = vm.createContext({ URL, Response, TextEncoder, btoa, crypto: webcrypto,
+  const context = vm.createContext({ URL, URLSearchParams, Response, TextEncoder, btoa, crypto: webcrypto,
     console, fetch: async (url, init) => {
       sent.push({ url, body: JSON.parse(init.body) }); return new Response(null, { status: 204 });
     } });
@@ -19,7 +19,8 @@ function fixture() {
   return { worker: context.worker, sent, pending, ctx: { waitUntil: promise => pending.push(promise) } };
 }
 function roomUrl(role = 'host', exp = Math.floor(Date.now() / 1000) + 600) {
-  const sig = createHmac('sha256', secret).update(`room-test.${exp}.${role}`)
+  const payload = `room-test.${exp}.${role}` + (role === 'host' ? '...' : '');
+  const sig = createHmac('sha256', secret).update(payload)
     .digest().subarray(0, 16).toString('base64url');
   return new URL(`https://example.invalid/?room=room-test&mode=${role}&exp=${exp}&sig=${sig}`);
 }
@@ -47,7 +48,7 @@ test('host invitation contains the viewer signature and never reuses the host si
   assert.equal((await worker.fetch(new Request(invitation), { HOST_LINK_SECRET: secret })).status, 200);
 });
 
-test('Discord response exposes only watching publicly and sends transmitting privately', async () => {
+test('Discord defers privately, delivers the host link first and posts only watching publicly in fallback mode', async () => {
   const f = fixture();
   const { publicKey, privateKey } = generateKeyPairSync('ed25519');
   const key = publicKey.export({ type: 'spki', format: 'der' }).subarray(-32).toString('hex');
@@ -59,11 +60,13 @@ test('Discord response exposes only watching publicly and sends transmitting pri
     method: 'POST', body, headers: { 'X-Signature-Ed25519': signature, 'X-Signature-Timestamp': timestamp }
   }), { HOST_LINK_SECRET: secret, DISCORD_PUBLIC_KEY: key }, f.ctx);
   const reply = await response.json();
-  assert.equal(reply.data.components[0].components.length, 1);
-  assert.equal(new URL(reply.data.components[0].components[0].url).searchParams.get('mode'), 'view');
+  assert.equal(reply.type, 5);
+  assert.equal(reply.data.flags, 64);
   await Promise.all(f.pending);
-  assert.equal(f.sent.length, 1);
-  assert.equal(f.sent[0].body.flags, 64);
+  assert.equal(f.sent.length, 2);
+  assert.match(f.sent[0].url, /\/messages\/@original$/);
+  assert.equal(f.sent[1].body.components[0].components.length, 1);
+  assert.equal(new URL(f.sent[1].body.components[0].components[0].url).searchParams.get('mode'), 'view');
   const host = new URL(f.sent[0].body.components[0].components[0].url);
   assert.equal(host.searchParams.get('mode'), 'host');
   assert.equal((await f.worker.fetch(new Request(host), { HOST_LINK_SECRET: secret })).status, 200);
