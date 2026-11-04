@@ -14,6 +14,9 @@ pnpm-debug.log*
 # Cache da Cloudflare / Wrangler
 .wrangler/
 dist/
+styles/generated/
+public/diorama/
+artifacts/frontpush-research/
 
 # Arquivos compactados e temporários de deploy antigo
 *.zip

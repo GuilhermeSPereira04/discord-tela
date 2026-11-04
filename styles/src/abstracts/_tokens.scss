@@ -1,0 +1,59 @@
+// Primitive values live here. Components consume the semantic CSS variables below.
+$colors: (
+  'canvas': #080808,
+  'surface': #101010,
+  'surface-raised': #191919,
+  'text': #f5f5f2,
+  'muted': #ababab,
+  'line': #333333,
+  'line-strong': #5a5a5a,
+  'blood': #990f18,
+  'blood-hover': #b31520,
+  'on-blood': #ffffff,
+  'connection-violet': #a855ff,
+  'connection-violet-light': #c887ff,
+  'connection-violet-deep': #7022de,
+  'connection-violet-glow': rgb(168 85 255 / .55),
+  'connection-blue': #5979ff,
+);
+$space: ('1': .25rem, '2': .5rem, '3': .75rem, '4': 1rem, '5': 1.5rem, '6': 2rem, '7': 3rem, '8': 4rem);
+$breakpoints: ('compact': 40rem, 'wide': 64rem);
+
+:root {
+  @each $name, $value in $colors { --color-#{$name}: #{$value}; }
+  @each $name, $value in $space { --space-#{$name}: #{$value}; }
+  --font-sans: 'Instrument Sans', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'SFMono-Regular', Consolas, monospace;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --leading-tight: 1.12;
+  --leading-body: 1.5;
+  --leading-copy: 1.65;
+  --text-small: .8125rem;
+  --text-label: .875rem;
+  --text-body: 1rem;
+  --text-title: clamp(1.75rem, 1.464rem + 1.43vw, 2.75rem);
+  --text-display: clamp(1.75rem, 1.179rem + 2.86vw, 3.75rem);
+  --page-gutter: clamp(1rem, .714rem + 1.43vw, 2rem);
+  --radius-small: .25rem;
+  --radius-panel: .5rem;
+  --target-size: 2.75rem;
+  --player-target-size: 3rem;
+  --duration-press: 120ms;
+  --duration-icon: 180ms;
+  --duration-player-reveal: 240ms;
+  --duration-audio: 320ms;
+  --duration-audio-stagger: 45ms;
+  --duration-volume-number: 90ms;
+  --duration-click-particles: 350ms;
+  --size-click-particle: 2px;
+  --ease-audio-settle: cubic-bezier(.2, 1.4, .35, 1);
+  --player-fullscreen-width: 8.5rem;
+  --duration-fast: 160ms;
+  --duration-label: 440ms;
+  --duration-waiting: 5000ms;
+  --duration-connection-tone: 10000ms;
+  --connection-tone-opacity: .1;
+  --ease-label: cubic-bezier(.16, 1, .3, 1);
+  --ease-standard: cubic-bezier(.2, .7, .3, 1);
+}

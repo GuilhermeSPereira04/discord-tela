@@ -1,0 +1,15 @@
+{
+  "name": "ascii-diorama-isolated-study",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "assets": "node scripts/fetch-assets.mjs",
+    "extract": "node scripts/extract-passes.mjs",
+    "diagnostics": "node scripts/prepare-diagnostics.mjs",
+    "preview": "node upstream/scripts/serve.mjs reference 5174"
+  },
+  "dependencies": {
+    "three": "0.187.0",
+    "esbuild": "0.28.2"
+  }
+}

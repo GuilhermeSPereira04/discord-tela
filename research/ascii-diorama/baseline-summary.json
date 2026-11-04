@@ -1,0 +1,58 @@
+{
+  "recordedAt": "2026-11-03T19:15:26.098Z",
+  "upstreamCommit": "3d3278a0f925aebddc574dfb7042eb1eb815f427",
+  "three": "0.187.0",
+  "limits": [
+    "Desktop RTX 4070 Laptop only",
+    "No mobile or concurrent screen capture",
+    "CPU submission is not total GPU work",
+    "Original shadow enum falls back to PCFShadowMap"
+  ],
+  "scope": "Instrumented upstream, original 1440x1440; desktop only",
+  "visibility": "visible",
+  "firstFrameMs": 6774,
+  "frames": 21240,
+  "warmSamples": 21210,
+  "frameCadenceMs": {
+    "median": 4.2,
+    "p95": 4.4
+  },
+  "cpuSubmissionMs": {
+    "median": 0.2,
+    "p95": 0.4
+  },
+  "gpuMs": {
+    "supported": true,
+    "samples": 12020,
+    "median": 3.02,
+    "p95": 4.47
+  },
+  "render": {
+    "frame": 63720,
+    "calls": 27,
+    "triangles": 2180702,
+    "points": 0,
+    "lines": 0
+  },
+  "memoryCounts": {
+    "geometries": 17,
+    "textures": 14
+  },
+  "longTasks": [
+    {
+      "start": 34.900000002235174,
+      "duration": 618
+    },
+    {
+      "start": 681.3000000007451,
+      "duration": 5930
+    },
+    {
+      "start": 6635.699999999255,
+      "duration": 175
+    }
+  ],
+  "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 4070 Laptop GPU (0x00002860) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "webgl": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+  "floatColorBuffer": true
+}
