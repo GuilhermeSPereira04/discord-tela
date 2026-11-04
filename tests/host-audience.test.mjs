@@ -11,13 +11,18 @@ class Element extends EventTarget {
   constructor() {
     super(); this.style = {}; this.dataset = {}; this.hidden = false;
     this.children = []; this.textContent = ''; this.attributes = {};
-    this.classList = { add() {}, remove() {}, toggle() {} };
+    const classes = new Set();
+    this.classList = {
+      add: name => classes.add(name), remove: name => classes.delete(name),
+      contains: name => classes.has(name),
+      toggle(name, force = !classes.has(name)) { force ? classes.add(name) : classes.delete(name); },
+    };
   }
   setAttribute(name, value) { this.attributes[name] = value; }
   replaceChildren(...children) { this.children = children; }
   append(...children) { this.children.push(...children); }
 }
-function fixture() {
+function fixture(mode = 'host') {
   const elements = new Map();
   const get = key => {
     if (!elements.has(key)) elements.set(key, new Element());
@@ -27,14 +32,28 @@ function fixture() {
   Object.assign(document, { getElementById: get, querySelector: get, body: get('body'),
     createTextNode: value => value, createElement: () => new Element() });
   class Peer extends EventEmitter {
-    constructor() { super(); this.calls = []; }
-    call(id) {
+    constructor() { super(); this.calls = []; this.connections = []; this.reconnects = 0; }
+    call(id, media) {
       const call = new EventEmitter();
       call.peerConnection = new EventTarget();
       call.peerConnection.connectionState = 'new';
+      call.senders = media.getTracks().map(track => ({
+        track, parameters: { encodings: [] },
+        getParameters() { return this.parameters; },
+        async setParameters(value) { this.parameters = value; },
+        async replaceTrack(value) { this.track = value; },
+      }));
+      call.peerConnection.getSenders = () => call.senders;
       call.close = () => { call.closed = true; call.emit('close'); };
       this.calls.push(call); return call;
     }
+    connect(id) {
+      const conn = new EventEmitter(); conn.peer = id;
+      conn.send = value => { conn.sent = value; };
+      conn.close = () => { conn.closed = true; conn.emit('close'); };
+      this.connections.push(conn); return conn;
+    }
+    reconnect() { this.reconnects++; }
     destroy() { this.destroyed = true; }
   }
   const track = { kind: 'video', stop() {} };
@@ -43,10 +62,10 @@ function fixture() {
   const context = vm.createContext({ document, Peer, Event, URL, console,
     window: { location: { href: 'https://example.invalid/?room=audience&mode=host&title=Call' } },
     navigator: { mediaDevices: { getDisplayMedia: async () => stream }, clipboard: { writeText: async text => { copied = text; } } },
-    setTimeout() {} });
+    setTimeout() {}, setInterval() { return 1; }, clearInterval() {} });
   const script = source.match(/  <script>\r?\n([\s\S]*?)  <\/script>/)[1]
     .replace('${JSON.stringify(safeRoom)}', '"audience"')
-    .replace('${JSON.stringify(safeMode)}', '"host"')
+    .replace('${JSON.stringify(safeMode)}', JSON.stringify(mode))
     .replace('${JSON.stringify(isPreview ? preview : null)}', 'null');
   vm.runInContext(script, context);
   return { get, run: value => vm.runInContext(value, context), get copied() { return copied; },
@@ -179,4 +198,125 @@ test('cancelling a source change keeps the stream live and reports beside its co
   assert.equal(f.get('host-actions').hidden, false);
   assert.match(f.get('host-live-feedback').textContent, /^Seleção cancelada/);
   assert.equal(f.get('host-feedback').hidden, true);
+});
+
+test('adding/removing capture audio replaces calls once and preserves the current audience', async () => {
+  const f = fixture();
+  await f.run('startHostStream()');
+  f.connect().emit('data', 'REQUEST_STREAM');
+  const originalCall = f.run('peer').calls[0];
+  f.run(`const videoTrack = { kind: 'video', stop() {} };
+    const audioTrack = { kind: 'audio', stop() {} };
+    navigator.mediaDevices.getDisplayMedia = async () => ({
+      getTracks: () => [videoTrack, audioTrack],
+      getVideoTracks: () => [videoTrack], getAudioTracks: () => [audioTrack]
+    });`);
+  await f.run('startHostStream()');
+  assert.equal(originalCall.closed, true);
+  assert.equal(f.run('peer').calls.length, 2);
+  assert.equal(f.get('viewer-count').textContent, '1');
+  const replacement = f.run('peer').calls[1];
+  assert.equal(replacement.senders[1].track.kind, 'audio');
+  originalCall.emit('close');
+  assert.equal(f.run('activeCalls.get("viewer")'), replacement);
+  f.run(`navigator.mediaDevices.getDisplayMedia = async () => ({
+    getTracks: () => [videoTrack],
+    getVideoTracks: () => [videoTrack], getAudioTracks: () => []
+  });`);
+  await f.run('startHostStream()');
+  assert.equal(replacement.senders[1].track, null);
+  assert.equal(f.run('peer').calls.length, 2);
+  assert.equal(f.get('host-audio-status').dataset.audio, 'off');
+  await f.run('startHostStream()');
+  assert.equal(f.run('peer').calls.length, 2);
+});
+
+test('a rejected track replacement cannot recreate a call after sharing stops', async () => {
+  const f = fixture();
+  await f.run('startHostStream()');
+  f.connect().emit('data', 'REQUEST_STREAM');
+  const call = f.run('peer').calls[0];
+  let rejectReplacement;
+  let replacementStarted;
+  const started = new Promise(resolve => { replacementStarted = resolve; });
+  call.senders[0].replaceTrack = () => new Promise((resolve, reject) => {
+    rejectReplacement = reject;
+    replacementStarted();
+  });
+  const pending = f.run('startHostStream()');
+  await started;
+  f.run('stopHostStream()');
+  rejectReplacement(new Error('Track was stopped'));
+  await pending;
+  assert.equal(f.run('peer'), null);
+  assert.equal(f.run('activeCalls.size'), 0);
+  assert.equal(f.get('host-actions').hidden, true);
+});
+
+test('sender settings apply video and audio bitrate independently and initialize empty encodings', async () => {
+  const f = fixture();
+  await f.run('startHostStream()');
+  f.connect().emit('data', 'REQUEST_STREAM');
+  const call = f.run('peer').calls[0];
+  const audioSender = { ...call.senders[0], track: { kind: 'audio' }, parameters: { encodings: [] } };
+  call.senders.push(audioSender);
+  f.run('boostSenderBitrate(activeCalls.get("viewer").peerConnection)');
+  await Promise.resolve();
+  assert.equal(call.senders[0].parameters.encodings[0].maxBitrate, 8500000);
+  assert.equal(call.senders[0].parameters.encodings[0].maxFramerate, 60);
+  assert.equal(audioSender.parameters.encodings[0].maxBitrate, 192000);
+  assert.equal(audioSender.parameters.encodings[0].priority, 'high');
+});
+
+test('host and viewer reconnect signalling while obsolete connections cannot disturb replacements', async () => {
+  const host = fixture();
+  await host.run('startHostStream()');
+  const hostPeer = host.run('peer');
+  hostPeer.emit('disconnected');
+  assert.equal(hostPeer.reconnects, 1);
+  host.run('stopHostStream()');
+  hostPeer.emit('disconnected');
+  assert.equal(hostPeer.reconnects, 1);
+
+  const viewer = fixture('view');
+  const viewerPeer = viewer.run('peer');
+  viewerPeer.emit('disconnected');
+  assert.equal(viewerPeer.reconnects, 1);
+  viewerPeer.emit('open');
+  const previous = viewer.run('viewerDataConnection');
+  viewer.run('connectToHost()');
+  const current = viewer.run('viewerDataConnection');
+  assert.equal(previous.closed, true);
+  previous.emit('open');
+  assert.equal(previous.sent, undefined);
+  current.emit('open');
+  assert.equal(current.sent, 'REQUEST_STREAM');
+  const oldCall = new EventEmitter();
+  oldCall.answer = () => {};
+  oldCall.close = () => oldCall.emit('close');
+  const newCall = new EventEmitter();
+  newCall.answer = () => {};
+  newCall.close = () => newCall.emit('close');
+  viewerPeer.emit('call', oldCall);
+  viewer.run('viewerConnected = true');
+  viewerPeer.emit('call', newCall);
+  assert.equal(viewer.run('viewerConnected'), true);
+  oldCall.emit('error', new Error('Old call'));
+  assert.equal(viewer.run('viewerConnected'), true);
+  newCall.emit('error', new Error('Current call'));
+  assert.equal(viewer.run('viewerConnected'), false);
+});
+
+test('capture requests retain window audio preferences at the API option level', async () => {
+  const f = fixture();
+  let requested;
+  const capture = f.run('navigator.mediaDevices.getDisplayMedia');
+  f.run('navigator.mediaDevices').getDisplayMedia = async options => { requested = options; return capture(); };
+  await f.run('startHostStream()');
+  assert.equal(requested.video.displaySurface, 'window');
+  assert.equal(requested.selfBrowserSurface, 'exclude');
+  assert.equal(requested.surfaceSwitching, 'include');
+  assert.equal(requested.systemAudio, 'include');
+  assert.equal(requested.windowAudio, 'window');
+  assert.equal(requested.audio.suppressLocalAudioPlayback, false);
 });

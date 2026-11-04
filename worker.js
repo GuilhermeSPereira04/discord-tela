@@ -304,20 +304,82 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       if (feedback === hostFeedback) feedback.hidden = !message;
     }
 
-    // Aumenta o bitrate do WebRTC para 1080p 60fps nítido
+    // Prefer higher-quality video/audio when the browser accepts these settings.
     function boostSenderBitrate(peerConnection) {
       if (!peerConnection || !peerConnection.getSenders) return;
       peerConnection.getSenders().forEach(async (sender) => {
-        if (sender.track && sender.track.kind === 'video') {
-          try {
-            const params = sender.getParameters();
-            if (!params.encodings) params.encodings = [{}];
+        if (!sender.track) return;
+        try {
+          const params = sender.getParameters();
+          if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+          if (sender.track.kind === 'video') {
             params.encodings[0].maxBitrate = 8500000; // 8.5 Mbps
             params.encodings[0].maxFramerate = 60;
-            await sender.setParameters(params);
-          } catch (e) {}
-        }
+          } else if (sender.track.kind === 'audio') {
+            params.encodings[0].maxBitrate = 192000;
+          }
+          params.encodings[0].priority = 'high';
+          params.encodings[0].networkPriority = 'high';
+          await sender.setParameters(params);
+        } catch (e) {}
       });
+    }
+
+    function startViewerCall(peerId) {
+      if (!peer || peer.destroyed || !localStream) return;
+      const existing = activeCalls.get(peerId);
+      if (existing) {
+        const state = existing.peerConnection?.connectionState;
+        if (!['disconnected', 'failed', 'closed'].includes(state)) return;
+        activeCalls.delete(peerId);
+        existing.close();
+      }
+      const call = peer.call(peerId, localStream);
+      if (!call) return;
+      activeCalls.set(peerId, call);
+      updateViewerCount();
+      setTimeout(() => boostSenderBitrate(call.peerConnection), 1000);
+      const updateState = () => {
+        if (activeCalls.get(peerId) !== call) return;
+        if (['failed', 'closed'].includes(call.peerConnection?.connectionState)) call.close();
+        else updateViewerCount();
+      };
+      call.peerConnection?.addEventListener('connectionstatechange', updateState);
+      const removeCall = () => {
+        call.peerConnection?.removeEventListener('connectionstatechange', updateState);
+        if (activeCalls.get(peerId) !== call) return;
+        activeCalls.delete(peerId);
+        updateViewerCount();
+      };
+      call.on('close', removeCall);
+      call.on('error', () => { removeCall(); call.close(); });
+    }
+
+    async function updateViewerStream(peerId, call, stream) {
+      const senders = call.peerConnection?.getSenders?.();
+      if (!senders) return;
+      const tracks = stream.getTracks();
+      let needsRecall = tracks.some(track => !senders.some(sender => sender.track?.kind === track.kind));
+      try {
+        if (!needsRecall) {
+          await Promise.all(senders.map(sender => {
+            if (!sender.track) return;
+            const replacement = tracks.find(track => track.kind === sender.track.kind) || null;
+            return sender.replaceTrack(replacement);
+          }));
+        }
+      } catch {
+        needsRecall = true;
+      }
+      if (needsRecall) {
+        // A newer capture or connection may have replaced this one while awaiting.
+        if (localStream !== stream || activeCalls.get(peerId) !== call) return;
+        activeCalls.delete(peerId);
+        call.close();
+        startViewerCall(peerId);
+        return;
+      }
+      if (localStream === stream && activeCalls.get(peerId) === call) boostSenderBitrate(call.peerConnection);
     }
 
     // ================= MODO TRANSMISSOR (HOST) =================
@@ -362,13 +424,19 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
           video: {
             width: { ideal: 1920, max: 2560 },
             height: { ideal: 1080, max: 1440 },
-            frameRate: { ideal: 60, max: 60 }
+            frameRate: { ideal: 60, max: 60 },
+            displaySurface: 'window'
           },
           audio: {
             echoCancellation: false,
             noiseSuppression: false,
-            autoGainControl: false
-          }
+            autoGainControl: false,
+            suppressLocalAudioPlayback: false
+          },
+          selfBrowserSurface: 'exclude',
+          surfaceSwitching: 'include',
+          systemAudio: 'include',
+          windowAudio: 'window'
         });
 
         if (captureId !== captureGeneration) {
@@ -395,21 +463,11 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
 
         videoTrack.onended = () => stopHostStream();
 
-        // Se já havia espectadores conectados, atualiza a tela para eles
-        activeCalls.forEach((call) => {
-          if (call.peerConnection) {
-            const senders = call.peerConnection.getSenders();
-            localStream.getTracks().forEach((track) => {
-              const sender = senders.find(s => s.track && s.track.kind === track.kind);
-              if (sender) sender.replaceTrack(track);
-            });
-          }
-        });
-
         if (!peer || peer.destroyed) {
           peer = new Peer(ROOM_ID, {
             config: {
               iceServers: [
+                { urls: 'stun:stun.cloudflare.com:3478' },
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' }
               ]
@@ -426,7 +484,9 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
             showHostFeedback('A sala não pôde conectar. Pare o compartilhamento e tente novamente.');
           });
           hostPeer.on('disconnected', () => {
-            if (peer === hostPeer) setLiveStatus(false, 'Sala desconectada');
+            if (peer !== hostPeer || hostPeer.destroyed) return;
+            setLiveStatus(false, 'Sala desconectada');
+            hostPeer.reconnect?.();
           });
 
           peer.on('connection', (conn) => {
@@ -436,26 +496,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
             conn.on('data', (msg) => {
               if (hostConnections.get(conn.peer) !== conn) return;
               if (msg === 'REQUEST_STREAM' && localStream) {
-                if (activeCalls.has(conn.peer)) return;
-                const call = peer.call(conn.peer, localStream);
-                if (!call) return;
-                activeCalls.set(conn.peer, call);
-                updateViewerCount();
-                setTimeout(() => boostSenderBitrate(call.peerConnection), 1000);
-                const updateState = () => {
-                  if (activeCalls.get(conn.peer) !== call) return;
-                  if (['failed', 'closed'].includes(call.peerConnection?.connectionState)) call.close();
-                  else updateViewerCount();
-                };
-                call.peerConnection?.addEventListener('connectionstatechange', updateState);
-                const removeCall = () => {
-                  call.peerConnection?.removeEventListener('connectionstatechange', updateState);
-                  if (activeCalls.get(conn.peer) !== call) return;
-                  activeCalls.delete(conn.peer);
-                  updateViewerCount();
-                };
-                call.on('close', removeCall);
-                call.on('error', () => { removeCall(); call.close(); });
+                startViewerCall(conn.peer);
               }
             });
             conn.on('close', () => {
@@ -465,6 +506,8 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
             });
           });
         }
+        // Snapshot the map because adding audio may replace a call during this pass.
+        await Promise.all(Array.from(activeCalls, ([peerId, call]) => updateViewerStream(peerId, call, newStream)));
       } catch (err) {
         if (captureId !== captureGeneration) return;
         showHostFeedback(err.name === 'NotAllowedError' ? 'Seleção cancelada. Você pode tentar novamente.' :
@@ -523,18 +566,26 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       peer = new Peer({
         config: {
           iceServers: [
+            { urls: 'stun:stun.cloudflare.com:3478' },
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' }
           ]
         }
       });
 
+      const viewerPeer = peer;
       peer.on('open', () => {
         connectToHost();
       });
 
+      viewerPeer.on('disconnected', () => {
+        if (peer === viewerPeer && !viewerPeer.destroyed) viewerPeer.reconnect?.();
+      });
+
       peer.on('call', (call) => {
+        const previous = viewerMediaCall;
         viewerMediaCall = call;
+        if (previous && previous !== call) previous.close();
         call.answer();
         call.on('stream', (remoteStream) => {
           if (viewerMediaCall !== call) return;
@@ -555,7 +606,16 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
           });
         });
 
+        const updateState = () => {
+          if (viewerMediaCall !== call) return;
+          if (['failed', 'closed'].includes(call.peerConnection?.connectionState)) handleHostDisconnect();
+        };
+        call.peerConnection?.addEventListener('connectionstatechange', updateState);
         call.on('close', () => {
+          call.peerConnection?.removeEventListener('connectionstatechange', updateState);
+          if (viewerMediaCall === call) handleHostDisconnect();
+        });
+        call.on('error', () => {
           if (viewerMediaCall === call) handleHostDisconnect();
         });
       });
@@ -570,12 +630,22 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
 
     function connectToHost() {
       if (!peer || peer.destroyed || viewerConnected) return;
+      if (peer.disconnected) {
+        peer.reconnect?.();
+        return;
+      }
       const conn = peer.connect(ROOM_ID, { reliable: true });
+      const previous = viewerDataConnection;
       viewerDataConnection = conn;
+      if (previous && previous !== conn) previous.close();
       conn.on('open', () => {
+        if (viewerDataConnection !== conn) return;
         conn.send('REQUEST_STREAM');
       });
       conn.on('close', () => {
+        if (viewerDataConnection === conn) handleHostDisconnect();
+      });
+      conn.on('error', () => {
         if (viewerDataConnection === conn) handleHostDisconnect();
       });
     }
