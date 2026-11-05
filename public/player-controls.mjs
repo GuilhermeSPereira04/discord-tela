@@ -1,5 +1,82 @@
 import { attachFullscreenFeedback, attachPipFeedback } from './fullscreen-feedback.mjs';
 import { attachFullscreenNavigation } from './fullscreen-navigation.mjs';
+import { attachLiquidVolume } from './liquid-volume.mjs';
+
+// Disclosure only: the original range and mute handler still own media gain.
+// A touch tap opens the panel without silently toggling the user's audio.
+export function attachVolumeDisclosure(audio, volume, doc = document) {
+  const view = doc.defaultView;
+  const compact = view.matchMedia('(width < 40rem), (hover: none), (pointer: coarse)');
+  const toggle = audio.querySelector('#volume-toggle');
+  const mute = audio.querySelector('#mute-btn');
+  const panel = audio.querySelector('#volume-panel');
+  const range = audio.querySelector('.volume-control');
+  let open = false;
+  let hovered = false;
+  let dragging = false;
+  const keyboardWithin = () => audio.contains(doc.activeElement) &&
+    doc.activeElement?.matches(':focus-visible');
+  function setOpen(next) {
+    open = next;
+    audio.classList.toggle('is-volume-open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.inert = !compact.matches;
+    range.inert = !open;
+    mute.inert = compact.matches && !open;
+    panel.setAttribute('aria-hidden', String(compact.matches && !open));
+    volume.setAttribute('aria-orientation', compact.matches ? 'vertical' : 'horizontal');
+    audio.dispatchEvent(new Event('volumedisclosurechange'));
+  }
+  toggle.addEventListener('click', () => setOpen(!open));
+  audio.addEventListener('pointerenter', event => {
+    if (compact.matches || event.pointerType === 'touch') return;
+    hovered = true;
+    setOpen(true);
+  });
+  audio.addEventListener('pointerleave', () => {
+    hovered = false;
+    if (!compact.matches && !dragging && !keyboardWithin()) setOpen(false);
+  });
+  audio.addEventListener('focusin', () => { if (!compact.matches) setOpen(true); });
+  audio.addEventListener('focusout', event => {
+    if (audio.contains(event.relatedTarget)) return;
+    if (!dragging && (compact.matches || !hovered)) setOpen(false);
+  });
+  mute.addEventListener('keydown', event => {
+    if (!compact.matches && (event.key === 'ArrowRight' || event.key === 'ArrowUp')) {
+      event.preventDefault();
+      setOpen(true);
+      volume.focus({ preventScroll: true });
+    }
+  });
+  volume.addEventListener('pointerdown', () => { dragging = true; });
+  function release() {
+    dragging = false;
+    if (!compact.matches && !hovered && !keyboardWithin()) setOpen(false);
+  }
+  doc.addEventListener('pointerup', release);
+  doc.addEventListener('pointercancel', release);
+  volume.addEventListener('lostpointercapture', release);
+  doc.addEventListener('pointerdown', event => {
+    if (open && !audio.contains(event.target)) setOpen(false);
+  });
+  doc.addEventListener('keydown', event => {
+    if (!open || event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopPropagation();
+    (compact.matches ? toggle : mute).focus({ preventScroll: true });
+    setOpen(false);
+  }, true);
+  compact.addEventListener('change', () => {
+    const hadFocus = audio.contains(doc.activeElement);
+    hovered = dragging = false;
+    setOpen(false);
+    if (hadFocus) (compact.matches ? toggle : mute).focus({ preventScroll: true });
+  });
+  view.addEventListener('blur', () => { hovered = dragging = false; setOpen(false); });
+  setOpen(false);
+  return { close() { dragging = false; setOpen(false); } };
+}
 
 // Fullscreen requests must start synchronously inside the user's click handler.
 // Request the entire player so custom controls remain in the fullscreen root.
@@ -51,6 +128,7 @@ export function attachPlayerControls(root, video, doc = document) {
   const fullscreenButton = root.querySelector('#fullscreen-btn');
   const fullscreenLabel = root.querySelector('#fullscreen-label');
   const muteButton = root.querySelector('#mute-btn');
+  const volumeToggle = root.querySelector('#volume-toggle');
   const volume = root.querySelector('#vol-slider');
   const volumeControl = root.querySelector('.volume-control');
   const volumeValue = root.querySelector('#volume-value');
@@ -73,6 +151,8 @@ export function attachPlayerControls(root, video, doc = document) {
   let cancelFrame;
   let waitingForFrame = false;
   const view = doc.defaultView;
+  const volumeDisclosure = attachVolumeDisclosure(root.querySelector('.player-audio'), volume, doc);
+  const liquidVolume = attachLiquidVolume(root.querySelector('.player-audio'), volume, doc);
   const fullscreenNavigation = attachFullscreenNavigation(view, {
     exit: () => { if (ownsFullscreen() || expanded) toggleFullscreen(); },
     onSettled: sync
@@ -158,6 +238,7 @@ export function attachPlayerControls(root, video, doc = document) {
     root.classList.toggle('is-controls-hidden', hide);
     controls.hidden = hide;
     if (hide) {
+      volumeDisclosure.close();
       notice.hidden = true;
       notice.textContent = '';
     }
@@ -191,11 +272,15 @@ export function attachPlayerControls(root, video, doc = document) {
     muteButton.title = silent ? 'Ativar som' : 'Silenciar';
     muteButton.classList.toggle('is-muted', silent);
     muteButton.dataset.audioLevel = silent ? 'muted' : video.volume <= 0.45 ? 'low' : 'high';
+    volumeToggle.classList.toggle('is-muted', silent);
+    volumeToggle.dataset.audioLevel = muteButton.dataset.audioLevel;
     volume.value = String(video.volume);
     const percent = Math.round(video.volume * 100);
+    volumeToggle.setAttribute('aria-label', `Ajustar volume, ${percent}%${silent ? ', som silenciado' : ''}`);
     volume.setAttribute('aria-valuetext', `${percent}%${video.muted ? ', som silenciado' : ''}`);
     volumeControl.style.setProperty('--volume-ratio', String(video.volume));
     volumeControl.classList.toggle('is-silent', silent);
+    liquidVolume.update(video.volume, silent);
     updateVolumeReadout(percent);
     if (video.volume > 0) previousVolume = video.volume;
     if (!silent) unmuteButton.hidden = true;

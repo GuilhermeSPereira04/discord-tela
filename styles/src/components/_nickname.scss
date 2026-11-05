@@ -1,0 +1,62 @@
+@use '../abstracts/mixins' as m;
+
+.nickname-entry-active > .preview-nav { display: none; }
+.nickname-screen {
+  --color-canvas: #f2f3f0;
+  --color-text: #202724;
+  --color-muted: #68716c;
+  --color-surface: #e6e9e3;
+  --color-surface-raised: #e0e5dc;
+  --color-line: #cbd1c6;
+  --color-line-strong: #aeb9aa;
+  isolation: isolate;
+  color-scheme: light;
+  color: var(--color-text);
+  min-block-size: 100vh;
+  min-block-size: 100dvh;
+  padding: max(var(--space-6), env(safe-area-inset-top)) max(var(--page-gutter), env(safe-area-inset-right)) max(var(--space-6), env(safe-area-inset-bottom)) max(var(--page-gutter), env(safe-area-inset-left));
+  padding-block-start: max(clamp(10rem, 25dvh, 16rem), env(safe-area-inset-top));
+  background: radial-gradient(ellipse at 50% 56%, #fafbf8, var(--color-canvas) 80%);
+  .nickname-form { position: relative; z-index: 1; }
+}
+.nickname-crowd { position: fixed; inset: 0; inline-size: 100%; block-size: 100%; z-index: 0; pointer-events: none; }
+.nickname-form {
+  inline-size: min(100%, 34rem);
+  h1 { margin: 0; font-size: clamp(2.75rem, 1.75rem + 3.2vw, 4.75rem); font-weight: 450; line-height: 1.02; letter-spacing: -.055em; }
+  p { margin-block: var(--space-4) var(--space-6); color: var(--color-muted); line-height: 1.6; }
+  label { display: block; margin-block-end: var(--space-3); font-size: var(--text-small); span { color: var(--color-muted); } }
+  input {
+    @include m.focus-ring;
+    inline-size: 100%; min-block-size: var(--player-target-size);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-line-strong); border-radius: var(--radius-small);
+    background: var(--color-canvas); color: var(--color-text); font: inherit;
+    font-size: 1rem;
+  }
+  .nickname-hint { margin-block: var(--space-3) var(--space-6); font-size: var(--text-small); }
+}
+.nickname-dialog {
+  inline-size: min(30rem, calc(100% - 2rem));
+  max-block-size: calc(100dvh - 2rem);
+  margin: auto;
+  padding: clamp(1.5rem, 5vw, 3rem);
+  overflow-y: auto;
+  border: 0;
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  color: var(--color-text);
+  &::backdrop { background: rgb(0 0 0 / .8); }
+  h1 { font-size: clamp(1.75rem, 5vw, 2.25rem); line-height: 1.12; letter-spacing: -.04em; }
+}
+.nickname-actions { display: grid; gap: var(--space-3); .btn { inline-size: 100%; } }
+.nickname-edit {
+  @include m.focus-ring;
+  @include m.target;
+  padding: var(--space-2) var(--space-3); border: 0; background: transparent;
+  color: var(--color-muted); font: inherit; font-size: var(--text-small); cursor: pointer;
+  &:hover { color: var(--color-text); }
+}
+.viewer .state-card .nickname-edit { grid-column: 2; justify-self: start; margin-block-start: var(--space-4); }
+@include m.below('compact') {
+  .viewer .state-card .nickname-edit { grid-column: 1; justify-self: center; }
+}

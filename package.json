@@ -4,6 +4,9 @@
   "description": "Bot de Discord que cria salas de compartilhamento de tela P2P no navegador (Cloudflare Workers + PeerJS)",
   "scripts": {
     "dev": "wrangler dev --ip 127.0.0.1 --port 8787",
+    "preview": "node scripts/preview.mjs",
+    "preview:check": "node scripts/validate-preview.mjs",
+    "production:check": "node scripts/validate-production.mjs",
     "styles:build": "sass --no-source-map --style=compressed styles/src/app.scss styles/generated/app.css",
     "assets:build": "node scripts/build-diorama.mjs",
     "client:build": "node scripts/build-client.mjs",

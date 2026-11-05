@@ -99,9 +99,11 @@ async function verifyRoomLink(secret, params, graceSeconds = 0) {
 
 function invalidLinkPage() {
   return new Response(
-    '<!DOCTYPE html><html lang="pt-BR"><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Link expirado</title>' +
-    '<body style="font-family:system-ui,sans-serif;background:#0b0b0f;color:#eee;display:grid;place-items:center;min-height:100vh;margin:0;text-align:center;padding:16px">' +
-    '<div><h1 style="font-weight:500">Link expirado ou inválido</h1><p>Use <strong>/tela</strong> no Discord para criar uma nova sala.</p></div></body></html>',
+    `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Link expirado</title><style>${appStyles}</style></head>
+    <body class="expired-page"><canvas id="expired-walkers" class="expired-walkers" aria-hidden="true"></canvas>
+    <main class="expired-message"><h1>Link expirado ou inválido</h1><p>Use <strong>/tela</strong> no Discord para criar uma nova sala.</p></main>
+    <script type="module">import { attachExpiredWalkers } from '/expired-walkers.mjs'; attachExpiredWalkers(document.getElementById('expired-walkers'),document.querySelector('.expired-message'));</script>
+    </body></html>`,
     { status: 403, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
   );
 }
@@ -251,7 +253,9 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
   const safeMode = mode === 'host' ? 'host' : 'view';
   const safeTitle = (title || 'Sala de Tela').replace(/[<>"]/g, '');
   // Prévia visual determinística: permite revisar os estados sem capturar ou receber mídia.
-  const isPreview = safeMode === 'view' && ['waiting', 'connected'].includes(preview);
+  const isPreview = localPreviewEnabled && safeMode === 'view' && ['waiting', 'connected'].includes(preview);
+  const hasNicknameEntry = safeMode === 'view' && !isPreview;
+  const isNicknamePreview = localPreviewEnabled && safeMode === 'view' && preview === 'nickname';
   const showPreviewNav = safeMode === 'view' && (localPreviewEnabled || isPreview);
 
   return `<!DOCTYPE html>
@@ -262,44 +266,86 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
   <title>${safeTitle} • Colegas de Call</title>
   <link rel="preload" href="/fonts/instrument-sans-latin-v4.woff2" as="font" type="font/woff2" crossorigin>
   ${safeMode === 'host' ? '<link rel="license" href="/diorama/credits.txt" title="Diorama: autoria e licenças">' : ''}
-  ${isPreview ? '' : '<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>'}
+  ${safeMode === 'host' ? '<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>' : ''}
   <style>${appStyles}</style>
 </head>
-<body class="${safeMode === 'view' ? 'viewer' : 'host'} ${isPreview ? 'viewer-preview' : ''}">
-  <header>
-    <div class="brand">
-      <span class="room-title">${safeTitle}</span>
-      <span id="status-badge" class="badge">
-        <span id="status-text" role="status" aria-live="polite" aria-atomic="true">Aguardando</span>
-      </span>
-    </div>
-    <div class="header-right" id="host-actions" hidden>
-      <button id="change-screen-btn" class="btn motion-button" data-button-motion style="display:none" onclick="startHostStream()"><span class="button-motion-content">Trocar Tela</span></button>
-      <button id="stop-stream-btn" class="btn motion-button motion-button--danger" data-button-motion style="display:none" onclick="stopHostStream()"><span class="button-motion-content">Encerrar</span></button>
-    </div>
-  </header>
-
-  ${showPreviewNav ? `<nav class="preview-nav" aria-label="Prévia dos estados do espectador">
-    <span>Prévia da interface${isPreview ? ' · sem transmissão real' : ''}</span>
-    <button class="btn secondary motion-link" aria-pressed="${preview === 'waiting'}" onclick="openViewerPreview('waiting')"><span class="motion-label"><span class="motion-track"><span>Conectando</span><span aria-hidden="true">Conectando</span></span></span></button>
-    <button class="btn secondary motion-link" aria-pressed="${preview === 'connected'}" onclick="openViewerPreview('connected')"><span class="motion-label"><span class="motion-track"><span>Conectado</span><span aria-hidden="true">Conectado</span></span></span></button>
-    ${isPreview ? '<a id="exit-preview" class="motion-link" href="#"><span class="motion-label"><span class="motion-track"><span>Sair da prévia</span><span aria-hidden="true">Sair da prévia</span></span></span></a>' : ''}
-  </nav>` : ''}
-
+<body class="${safeMode === 'view' ? 'viewer' : 'host'} ${isPreview ? 'viewer-preview' : ''} ${hasNicknameEntry ? 'nickname-entry-active' : ''}">
   ${safeMode === 'host' ? '<div class="host-workspace">' : ''}
-  <main>
-    ${safeMode === 'host' ? '<div class="host-live-heading"><h1 id="host-live-title" tabindex="-1">Sua transmissão.</h1><span>Prévia da tela</span></div>' : ''}
+  <main id="app-main" ${hasNicknameEntry ? 'hidden' : ''}>
     <!-- Card Inicial -->
     <div id="state-card" class="state-card">
       <div class="state-icon" id="card-icon" aria-hidden="true">${safeMode === 'host' ? '<div id="host-diorama" class="host-diorama" data-state="loading"><img data-src="/diorama/poster.jpg" width="224" height="224" alt="" decoding="async"></div>' : CONNECTION_SYMBOL}</div>
-      <h2 id="card-title">Carregando...</h2>
+      <h1 id="card-title">Carregando...</h1>
       <p id="card-desc">Preparando conexão P2P direta.</p>
-      <button id="card-btn" class="btn full player-control motion-button" data-button-motion data-click-particles="true" data-fill-state="idle" style="display:none"><span class="player-control-content"><span id="host-start-label">Selecionar tela</span></span></button>
+      <button id="card-btn" class="btn full player-control motion-button" data-button-motion data-click-particles="true" data-fill-state="idle" type="button" style="display:none"><span class="player-control-content">Selecionar tela</span></button>
       ${safeMode === 'host' ? '<p id="host-feedback" class="host-feedback" role="status" hidden></p>' : ''}
+      ${safeMode === 'view' && !isPreview ? '<button id="edit-waiting-nickname" class="nickname-edit" type="button" hidden>Alterar apelido</button>' : ''}
     </div>
 
+    ${safeMode === 'host' ? `<div id="host-actions" class="host-capture-panel" hidden>
+      <h1 id="host-live-title" tabindex="-1">Sua transmissão.</h1>
+      <div class="host-capture-bar">
+        <div class="host-capture-status">
+          <div class="host-live-status">
+            <span id="status-text" role="status"></span>
+            <button class="host-live-emblem" type="button" aria-label="Mangekyō Eterno do Sasuke" aria-pressed="false">
+            <span class="host-live-eye-art" aria-hidden="true">
+            <svg class="host-live-eye" viewBox="0 0 28 20">
+              <defs>
+                <path id="host-eye-shape" d="M1.5 10C8 1.5 20 1.5 26.5 10C20 18.5 8 18.5 1.5 10Z"/>
+                <clipPath id="host-eye-aperture"><use href="#host-eye-shape"/></clipPath>
+                <path id="host-eye-tomoe" d="M13.4 4.4C15.2 4.1 16.2 5.5 15.54 6.55C15.14 7.19 14.28 7.31 13.74 6.86C13.2 6.41 13.31 5.65 13.84 5.35C13.75 4.97 13.59 4.7 13.4 4.4Z"/>
+              </defs>
+              <use href="#host-eye-shape" fill="#321b21"/>
+              <g clip-path="url(#host-eye-aperture)">
+                <g class="host-live-iris">
+                  <circle cx="14" cy="10" r="6.55" fill="currentColor"/>
+                  <circle cx="14" cy="10" r="4.45" fill="none" stroke="#401018" stroke-width=".55"/>
+                  <g class="host-eye-tomoe" fill="#19090d">
+                    <circle cx="14" cy="10" r="1.65"/>
+                    <use href="#host-eye-tomoe"/>
+                    <use href="#host-eye-tomoe" transform="rotate(120 14 10)"/>
+                    <use href="#host-eye-tomoe" transform="rotate(240 14 10)"/>
+                  </g>
+                  <g class="host-eye-mangekyo">
+                    <circle cx="14" cy="10" r="6.55" fill="#19090d"/>
+                    <path id="host-eye-mangekyo-triangle" d="M14 4Q16.75 6.6 19.2 13Q14 14.2 8.8 13Q11.25 6.6 14 4Z" fill="#ff525f" stroke="#321019" stroke-width=".35"/>
+                    <use href="#host-eye-mangekyo-triangle" transform="rotate(180 14 10)"/>
+                    <path id="host-eye-eternal-blade" d="M12.75 10Q12.9 13.25 14 14.9Q15.1 13.25 15.25 10Z" fill="#19090d"/>
+                    <use href="#host-eye-eternal-blade" transform="rotate(120 14 10)"/>
+                    <use href="#host-eye-eternal-blade" transform="rotate(240 14 10)"/>
+                    <circle cx="14" cy="10" r=".92" fill="#ff525f"/>
+                  </g>
+                </g>
+              </g>
+              <use href="#host-eye-shape" fill="none" stroke="currentColor" stroke-width="1.15"/>
+            </svg>
+            </span>
+            </button>
+          </div>
+          <p id="host-audio-status" role="status">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M11 5 6 9H3v6h3l5 4Z"/>
+              <path class="host-audio-wave" d="M15 9a4 4 0 0 1 0 6"/>
+              <path class="host-audio-wave host-audio-wave--far" d="M18 6a8 8 0 0 1 0 12"/>
+              <path class="host-audio-off" d="m15 9 6 6m0-6-6 6"/>
+            </svg>
+            <span id="host-audio-label"></span>
+          </p>
+        </div>
+        <div class="host-capture-buttons" role="group" aria-label="Controles do compartilhamento">
+          <button id="change-screen-btn" class="btn motion-button" data-button-motion type="button" onclick="startHostStream()">
+            <span class="button-motion-content"><svg class="host-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h15m-4-4 4 4-4 4"/><path d="M20 16H5m4-4-4 4 4 4"/></svg>Trocar fonte</span>
+          </button>
+          <button id="stop-stream-btn" class="btn motion-button host-stop-sharing" data-button-motion type="button" onclick="stopHostStream()">
+            <span class="button-motion-content"><svg class="host-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Parar compartilhamento</span>
+          </button>
+        </div>
+        <p id="host-live-feedback" class="host-live-feedback" role="status"></p>
+      </div>
+    </div>` : ''}
     <!-- Player de Vídeo -->
-    <div id="video-wrapper" data-preview="${isPreview}" data-state="waiting" role="region" aria-label="Player da transmissão">
+    <div id="video-wrapper" data-preview="${isPreview}" data-state="waiting" role="region" aria-label="${safeMode === 'host' ? 'Prévia da tela compartilhada' : 'Player da transmissão'}">
       <div class="player-stage">
         <button id="unmute-toast" class="btn unmute-toast" hidden>Ativar o som</button>
         <video id="screen-video" aria-label="Vídeo da transmissão" autoplay playsinline ${isPreview ? 'hidden aria-hidden="true"' : ''}></video>
@@ -316,13 +362,19 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       </div>
       <div id="player-controls" class="controls-bar" role="group" aria-label="Controles da transmissão">
         <div class="player-audio">
+          <button id="volume-toggle" class="player-control volume-toggle" type="button" aria-label="Ajustar volume" aria-expanded="false" aria-controls="volume-panel">
+            <span class="player-control-content"><svg class="audio-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="audio-speaker" d="M10 5 5 9H2v6h3l5 4V5Z"/><path class="audio-wave audio-wave--near" pathLength="1" d="M14 8a6 6 0 0 1 0 8"/><path class="audio-wave audio-wave--far" pathLength="1" d="M18 5a10 10 0 0 1 0 14"/><path class="audio-slash" pathLength="1" d="m15 9 6 6m0-6-6 6"/></svg></span>
+          </button>
+          <div id="volume-panel" class="volume-panel" role="group" aria-label="Volume da transmissão">
           <button id="mute-btn" class="player-control" aria-label="Silenciar" aria-pressed="false" title="Silenciar">
             <span class="player-control-content"><svg class="audio-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path class="audio-speaker" d="M10 5 5 9H2v6h3l5 4V5Z"/><path class="audio-wave audio-wave--near" pathLength="1" d="M14 8a6 6 0 0 1 0 8"/><path class="audio-wave audio-wave--far" pathLength="1" d="M18 5a10 10 0 0 1 0 14"/><path class="audio-slash" pathLength="1" d="m15 9 6 6m0-6-6 6"/></svg></span>
           </button>
           <div class="volume-control"><input id="vol-slider" aria-label="Volume" type="range" min="0" max="1" step="0.01" value="1" /><span class="volume-rail" aria-hidden="true"><span class="volume-fill"></span></span><span class="volume-handle" aria-hidden="true"></span><output id="volume-value" for="vol-slider" aria-hidden="true">100%</output></div>
+          </div>
         </div>
         <div class="player-actions">
-          <button id="pip-btn" class="player-control" data-fill-state="idle" aria-pressed="false" aria-describedby="pip-description"><span class="pip-border" aria-hidden="true"></span><span class="player-control-content">Miniatura</span></button>
+          ${safeMode === 'view' && !isPreview ? '<button id="edit-player-nickname" class="player-control" type="button" aria-label="Alterar apelido" title="Alterar apelido"><span class="player-control-content"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15l-1 6Z"/></svg></span></button>' : ''}
+          <button id="pip-btn" class="player-control" data-fill-state="idle" aria-label="Abrir miniatura" aria-pressed="false" aria-describedby="pip-description"><span class="pip-border" aria-hidden="true"></span><span class="player-control-content"><svg class="pip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 11h6v6h-6z"/></svg><span class="player-control-label">Miniatura</span></span></button>
           <span id="pip-description" class="visually-hidden">Abre o vídeo em uma janela flutuante.</span>
           <button id="fullscreen-btn" class="player-control player-control--primary motion-button" data-fill-state="idle" aria-label="Entrar em tela cheia" aria-pressed="false">
             <span class="player-control-content"><svg class="fullscreen-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g class="fullscreen-corner corner-tl"><path d="M8 3H3v5"/></g><g class="fullscreen-corner corner-tr"><path d="M16 3h5v5"/></g><g class="fullscreen-corner corner-bl"><path d="M3 16v5h5"/></g><g class="fullscreen-corner corner-br"><path d="M21 16v5h-5"/></g></svg>
@@ -337,8 +389,8 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
     <div class="audience-heading"><h2 id="audience-title">Quem está na sala</h2><span id="viewer-count" class="audience-count" role="status" aria-live="polite" aria-label="0 espectadores na sala">0</span></div>
     <div id="audience-empty" class="audience-empty"><p>Ninguém conectado ainda.</p><span>Envie o link para quem vai assistir.</span></div>
     <ul id="audience-list" class="audience-list" aria-label="Espectadores conectados"></ul>
-    <p id="audience-identity" class="audience-caption" hidden>Os nomes não são informados pelo link de acesso.</p>
-    <div class="host-invite"><button id="copy-view-link" class="host-copy-link motion-button" data-button-motion type="button"><span class="button-motion-content">Copiar link para assistir <span aria-hidden="true">↗</span></span></button><p id="copy-feedback" class="audience-caption" role="status" hidden></p><input id="view-link-fallback" class="view-link-fallback" aria-label="Link para assistir" readonly hidden></div>
+    <p id="audience-identity" class="audience-caption" hidden>Apelidos escolhidos por quem assiste.</p>
+    <div class="host-invite"><button id="copy-view-link" class="host-copy-link motion-button" data-button-motion type="button"><span class="button-motion-content"><svg class="host-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2"/></svg>Copiar link de convite</span></button><p id="copy-feedback" class="audience-caption" role="status" hidden></p><input id="view-link-fallback" class="view-link-fallback" aria-label="Link para assistir" readonly hidden></div>
     <fieldset class="host-quality">
       <legend>Prioridade da imagem</legend>
       <div class="quality-options">
@@ -347,8 +399,29 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
         <label class="quality-option"><input type="radio" name="quality" value="light"><span><strong>Leve</strong><small>720p a 30 fps, para upload fraco.</small></span></label>
       </div>
     </fieldset>
-    <p id="host-audio-status" class="host-audio-status" hidden></p>
   </aside></div>` : ''}
+  ${showPreviewNav ? `<nav class="preview-nav" aria-label="Prévia dos estados do espectador">
+    <span>Prévia da interface${isPreview ? ' · sem transmissão real' : ''}</span>
+    <button class="btn secondary motion-link" aria-pressed="${preview === 'waiting'}" onclick="openViewerPreview('waiting')"><span class="motion-label"><span class="motion-track"><span>Conectando</span><span aria-hidden="true">Conectando</span></span></span></button>
+    <button class="btn secondary motion-link" aria-pressed="${preview === 'connected'}" onclick="openViewerPreview('connected')"><span class="motion-label"><span class="motion-track"><span>Conectado</span><span aria-hidden="true">Conectado</span></span></span></button>
+    ${isPreview ? '<a id="exit-preview" class="motion-link" href="#"><span class="motion-label"><span class="motion-track"><span>Sair da prévia</span><span aria-hidden="true">Sair da prévia</span></span></span></a>' : ''}
+  </nav>` : ''}
+
+  ${hasNicknameEntry ? `<main id="nickname-screen" class="nickname-screen">
+    <canvas id="nickname-crowd" class="nickname-crowd" aria-hidden="true"></canvas>
+    <form id="nickname-form" class="nickname-form" aria-labelledby="nickname-title" aria-describedby="nickname-description">
+      <h1 id="nickname-title">Como quer aparecer?</h1>
+      <p id="nickname-description">Escolha um apelido para quem transmite reconhecer você. É opcional.</p>
+      <label for="viewer-nickname">Seu apelido <span>(opcional)</span></label>
+      <input id="viewer-nickname" name="nickname" type="text" maxlength="24" autocomplete="nickname" spellcheck="false" aria-describedby="nickname-hint" autofocus>
+      <p id="nickname-hint" class="nickname-hint">Até 24 caracteres. Deixe em branco para continuar sem apelido.</p>
+      <div class="nickname-actions">
+        <button id="nickname-submit" class="btn player-control motion-button" data-button-motion type="submit"><span class="player-control-content">Assistir transmissão</span></button>
+        <button id="nickname-cancel" class="nickname-edit" type="button">Continuar sem apelido</button>
+      </div>
+    </form>
+  </main>
+  <dialog id="nickname-dialog" class="nickname-dialog" aria-labelledby="nickname-title" aria-describedby="nickname-description"></dialog>` : ''}
 
   <script>
     const ROOM_ID = "canja_v2_" + ${JSON.stringify(safeRoom)};
@@ -356,6 +429,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
     const INVITE_HREF = ${JSON.stringify(inviteHref)};
     const HOST_STATUS = ${JSON.stringify(hostStatus)};
     const PREVIEW = ${JSON.stringify(isPreview ? preview : null)};
+    const NICKNAME_PREVIEW = ${JSON.stringify(isNicknamePreview)};
 
     function openViewerPreview(state) {
       const url = new URL(window.location.href);
@@ -369,7 +443,6 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       document.getElementById('exit-preview').href = realUrl.href;
     }
 
-    const statusBadge = document.getElementById('status-badge');
     const statusText = document.getElementById('status-text');
     const viewerCountEl = document.getElementById('viewer-count');
     const stateCard = document.getElementById('state-card');
@@ -380,20 +453,25 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
     const videoWrapper = document.getElementById('video-wrapper');
     const videoEl = document.getElementById('screen-video');
     const changeScreenBtn = document.getElementById('change-screen-btn');
-    const stopStreamBtn = document.getElementById('stop-stream-btn');
     const unmuteToast = document.getElementById('unmute-toast');
     const hostActions = document.getElementById('host-actions');
     const audienceList = document.getElementById('audience-list');
     const audienceEmpty = document.getElementById('audience-empty');
     const audienceIdentity = document.getElementById('audience-identity');
     const hostFeedback = document.getElementById('host-feedback');
+    const hostLiveFeedback = document.getElementById('host-live-feedback');
     const hostAudioStatus = document.getElementById('host-audio-status');
+    const hostAudioLabel = document.getElementById('host-audio-label');
 
     let peer = null;
     let localStream = null;
     let activeCalls = new Map();
     const hostConnections = new Map();
     const viewerNumbers = new Map();
+    const viewerNicknames = new Map();
+    let viewerNickname = '';
+    let viewerJoined = false;
+    let viewerScriptLoading = false;
     let viewerSequence = 0;
     let captureGeneration = 0;
     let retryTimer = null;
@@ -446,12 +524,10 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
     }
 
     function setLiveStatus(isLive, text) {
+      if (!statusText) return;
       statusText.textContent = text;
-      if (isLive) {
-        statusBadge.classList.add('live');
-      } else {
-        statusBadge.classList.remove('live');
-      }
+      statusText.classList.toggle('live', isLive);
+      statusText.dispatchEvent(new Event('hostlivestatuschange'));
     }
 
     function setWaitingMessage(title, description) {
@@ -482,7 +558,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       viewerCountEl.textContent = String(count);
       viewerCountEl.setAttribute('aria-label', count + (count === 1 ? ' espectador na sala' : ' espectadores na sala'));
       audienceEmpty.hidden = count > 0;
-      audienceIdentity.hidden = count === 0;
+      audienceIdentity.hidden = !Array.from(activeCalls.keys()).some(id => viewerNicknames.get(id));
       audienceList.replaceChildren(...Array.from(activeCalls, ([id, call]) => {
         if (!viewerNumbers.has(id)) viewerNumbers.set(id, ++viewerSequence);
         const row = document.createElement('li');
@@ -491,9 +567,13 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
         marker.className = 'audience-marker';
         marker.textContent = number;
         marker.setAttribute('aria-hidden', 'true');
+        const nickname = viewerNicknames.get(id);
+        marker.hidden = Boolean(nickname);
+        row.dataset.named = String(Boolean(nickname));
         const name = document.createElement('span');
         name.className = 'audience-name';
-        name.textContent = 'Espectador ' + number;
+        name.textContent = nickname || 'Espectador ' + number;
+        name.dir = 'auto';
         const state = document.createElement('span');
         state.className = 'audience-state';
         const connectionState = call.peerConnection?.connectionState;
@@ -504,9 +584,96 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       }));
     }
 
+    // Bound untrusted text at both ends; render it only through textContent.
+    function normalizeNickname(value) {
+      if (typeof value !== 'string') return '';
+      const cleaned = value.slice(0, 256).normalize('NFC')
+        .replace(/\\s+/gu, ' ')
+        .replace(/[\\u0000-\\u001f\\u007f-\\u009f\\u061c\\u200e\\u200f\\u202a-\\u202e\\u2066-\\u2069]/g, '')
+        .trim();
+      return Array.from(cleaned).slice(0, 24).join('');
+    }
+
+    function sendViewerProfile() {
+      if (!viewerDataConnection?.open) return;
+      try { viewerDataConnection.send({ type: 'VIEWER_PROFILE', nickname: viewerNickname }); }
+      catch { /* Reconnection sends the current profile again on open. */ }
+    }
+
+    function setupViewerNickname() {
+      const dialog = document.getElementById('nickname-dialog');
+      const screen = document.getElementById('nickname-screen');
+      const form = document.getElementById('nickname-form');
+      const appMain = document.getElementById('app-main');
+      const input = document.getElementById('viewer-nickname');
+      const submit = document.getElementById('nickname-submit');
+      const cancel = document.getElementById('nickname-cancel');
+      const waitingEdit = document.getElementById('edit-waiting-nickname');
+      const storageKey = 'viewer-nickname:' + ROOM_ID;
+      let remembered = null;
+      try { remembered = window.sessionStorage.getItem(storageKey); } catch {}
+
+      function saveNickname(value) {
+        viewerNickname = normalizeNickname(value);
+        input.value = viewerNickname;
+        try { window.sessionStorage.setItem(storageKey, viewerNickname); } catch {}
+        const joining = !viewerJoined;
+        viewerJoined = true;
+        dialog.close();
+        waitingEdit.hidden = false;
+        if (joining) {
+          screen.hidden = true;
+          appMain.hidden = false;
+          document.body.classList.remove('nickname-entry-active');
+          setWaitingMessage('Conectando à transmissão', 'A imagem aparece aqui assim que a transmissão começar.');
+          document.dispatchEvent(new Event('viewerjoined'));
+          initViewer();
+          waitingEdit.focus?.({ preventScroll: true });
+        } else sendViewerProfile();
+      }
+
+      function editNickname() {
+        input.value = viewerNickname;
+        submit.querySelectorAll('.player-control-content').forEach(label => {
+          label.textContent = viewerJoined ? 'Salvar apelido' : 'Assistir transmissão';
+        });
+        cancel.textContent = viewerJoined ? 'Cancelar' : 'Continuar sem apelido';
+        if (!viewerJoined) {
+          screen.hidden = false;
+          appMain.hidden = true;
+          document.body.classList.add('nickname-entry-active');
+          document.body.classList.remove('is-connecting');
+          return;
+        }
+        // Keep the editor inside the fullscreen root when invoked from the player.
+        dialog.append(form);
+        (videoWrapper.classList.contains('active') ? videoWrapper : document.body).append(dialog);
+        dialog.showModal();
+      }
+
+      form.addEventListener('submit', event => {
+        event.preventDefault(); saveNickname(input.value);
+      });
+      cancel.addEventListener('click', () => viewerJoined ? dialog.close() : saveNickname(''));
+      dialog.addEventListener('cancel', event => {
+        if (!viewerJoined) { event.preventDefault(); saveNickname(''); }
+      });
+      form.addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return;
+        event.stopPropagation();
+        if (!viewerJoined) { event.preventDefault(); saveNickname(''); }
+      });
+      waitingEdit.addEventListener('click', editNickname);
+      document.getElementById('edit-player-nickname').addEventListener('click', editNickname);
+
+      if (remembered !== null && !NICKNAME_PREVIEW) saveNickname(remembered);
+      else editNickname();
+    }
+
     function showHostFeedback(message) {
-      hostFeedback.textContent = message;
-      hostFeedback.hidden = !message;
+      const feedback = localStream ? hostLiveFeedback : hostFeedback;
+      feedback.textContent = message;
+      if (feedback === hostFeedback) feedback.hidden = !message;
     }
 
     // Aumenta o bitrate do WebRTC para 1080p 60fps nítido
@@ -537,17 +704,79 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       const profile = qualityProfile();
       const maxBitrate = Math.min(bitrateForViewers(activeCalls.size), profile.cap);
       peerConnection.getSenders().forEach(async (sender) => {
-        if (sender.track && sender.track.kind === 'video') {
-          try {
-            const params = sender.getParameters();
-            if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+        if (!sender.track) return;
+        try {
+          const params = sender.getParameters();
+          if (!params.encodings || !params.encodings.length) params.encodings = [{}];
+          if (sender.track.kind === 'video') {
             params.encodings[0].maxBitrate = maxBitrate;
             params.encodings[0].maxFramerate = profile.fps;
             params.degradationPreference = profile.degradation;
-            await sender.setParameters(params);
-          } catch (e) {}
-        }
+          } else if (sender.track.kind === 'audio') {
+            params.encodings[0].maxBitrate = 192000;
+          }
+          params.encodings[0].priority = 'high';
+          params.encodings[0].networkPriority = 'high';
+          await sender.setParameters(params);
+        } catch (e) {}
       });
+    }
+
+    function startViewerCall(peerId) {
+      if (!peer || peer.destroyed || !localStream) return;
+      const existing = activeCalls.get(peerId);
+      if (existing) {
+        const state = existing.peerConnection?.connectionState;
+        if (!['disconnected', 'failed', 'closed'].includes(state)) return;
+        activeCalls.delete(peerId);
+        existing.close();
+      }
+      const call = peer.call(peerId, localStream, { sdpTransform: raiseStartBitrate });
+      if (!call) return;
+      activeCalls.set(peerId, call);
+      updateViewerCount();
+      setTimeout(() => boostSenderBitrate(call.peerConnection), 1000);
+      const updateState = () => {
+        if (activeCalls.get(peerId) !== call) return;
+        if (['failed', 'closed'].includes(call.peerConnection?.connectionState)) call.close();
+        else updateViewerCount();
+      };
+      call.peerConnection?.addEventListener('connectionstatechange', updateState);
+      const removeCall = () => {
+        call.peerConnection?.removeEventListener('connectionstatechange', updateState);
+        if (activeCalls.get(peerId) !== call) return;
+        activeCalls.delete(peerId);
+        updateViewerCount();
+      };
+      call.on('close', removeCall);
+      call.on('error', () => { removeCall(); call.close(); });
+    }
+
+    async function updateViewerStream(peerId, call, stream) {
+      const senders = call.peerConnection?.getSenders?.();
+      if (!senders) return;
+      const tracks = stream.getTracks();
+      let needsRecall = tracks.some(track => !senders.some(sender => sender.track?.kind === track.kind));
+      try {
+        if (!needsRecall) {
+          await Promise.all(senders.map(sender => {
+            if (!sender.track) return;
+            const replacement = tracks.find(track => track.kind === sender.track.kind) || null;
+            return sender.replaceTrack(replacement);
+          }));
+        }
+      } catch {
+        needsRecall = true;
+      }
+      if (needsRecall) {
+        // A newer capture or connection may have replaced this one while awaiting.
+        if (localStream !== stream || activeCalls.get(peerId) !== call) return;
+        activeCalls.delete(peerId);
+        call.close();
+        startViewerCall(peerId);
+        return;
+      }
+      if (localStream === stream && activeCalls.get(peerId) === call) boostSenderBitrate(call.peerConnection);
     }
 
     let appliedViewerCount = -1;
@@ -640,10 +869,8 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
     if (MODE === 'host') {
       cardTitle.replaceChildren(document.createTextNode('Compartilhe'), document.createElement('br'), document.createTextNode('sua tela.'));
       cardDesc.textContent = 'Escolha uma tela, janela ou aba. Para transmitir som, ative o áudio na seleção.';
-      document.getElementById('host-start-label').textContent = 'Selecionar tela';
       cardBtn.style.display = 'inline-flex';
       cardBtn.onclick = startHostStream;
-      setLiveStatus(false, 'Pronto para transmitir');
       videoEl.muted = true; // Host não ouve o próprio eco
       document.querySelector('.controls-bar').style.display = 'none';
       const inviteUrl = new URL(INVITE_HREF || window.location.href);
@@ -681,13 +908,19 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
           video: {
             width: { ideal: profile.width, max: profile.width === 1920 ? 2560 : profile.width },
             height: { ideal: profile.height, max: profile.height === 1080 ? 1440 : profile.height },
-            frameRate: { ideal: profile.fps, max: profile.fps }
+            frameRate: { ideal: profile.fps, max: profile.fps },
+            displaySurface: 'window'
           },
           audio: {
             echoCancellation: false,
             noiseSuppression: false,
-            autoGainControl: false
-          }
+            autoGainControl: false,
+            suppressLocalAudioPlayback: false
+          },
+          selfBrowserSurface: 'exclude',
+          surfaceSwitching: 'include',
+          systemAudio: 'include',
+          windowAudio: 'window'
         });
 
         if (captureId !== captureGeneration) {
@@ -705,32 +938,21 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
 
         videoEl.srcObject = localStream;
         videoWrapper.dispatchEvent(new Event('playerstreamchange'));
-        showPlayer();
-        changeScreenBtn.style.display = 'inline-flex';
-        stopStreamBtn.style.display = 'inline-flex';
         hostActions.hidden = false;
-        hostAudioStatus.hidden = false;
-        hostAudioStatus.textContent = localStream.getAudioTracks().length ? 'Áudio compartilhado' : 'Sem áudio compartilhado';
+        showPlayer();
+        const hasSharedAudio = localStream.getAudioTracks().length > 0;
+        hostAudioStatus.dataset.audio = hasSharedAudio ? 'on' : 'off';
+        hostAudioLabel.textContent = hasSharedAudio ? 'Áudio compartilhado' : 'Sem áudio compartilhado';
         setLiveStatus(Boolean(peer?.open), peer?.open ? 'Ao vivo' : 'Preparando a sala');
         scheduleLiveStatus();
 
         videoTrack.onended = () => stopHostStream();
 
-        // Se já havia espectadores conectados, atualiza a tela para eles
-        activeCalls.forEach((call) => {
-          if (call.peerConnection) {
-            const senders = call.peerConnection.getSenders();
-            localStream.getTracks().forEach((track) => {
-              const sender = senders.find(s => s.track && s.track.kind === track.kind);
-              if (sender) sender.replaceTrack(track);
-            });
-          }
-        });
-
         if (!peer || peer.destroyed) {
           peer = new Peer(ROOM_ID, {
             config: {
               iceServers: [
+                { urls: 'stun:stun.cloudflare.com:3478' },
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' }
               ]
@@ -744,10 +966,12 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
           hostPeer.on('error', () => {
             if (peer !== hostPeer) return;
             setLiveStatus(false, 'Falha na conexão');
-            hostAudioStatus.textContent = 'A sala não pôde conectar. Encerre e tente novamente.';
+            showHostFeedback('A sala não pôde conectar. Pare o compartilhamento e tente novamente.');
           });
           hostPeer.on('disconnected', () => {
-            if (peer === hostPeer) setLiveStatus(false, 'Sala desconectada');
+            if (peer !== hostPeer || hostPeer.destroyed) return;
+            setLiveStatus(false, 'Sala desconectada');
+            hostPeer.reconnect?.();
           });
 
           peer.on('connection', (conn) => {
@@ -756,37 +980,27 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
             if (previous && previous !== conn) previous.close();
             conn.on('data', (msg) => {
               if (hostConnections.get(conn.peer) !== conn) return;
-              if (msg === 'REQUEST_STREAM' && localStream) {
-                if (activeCalls.has(conn.peer)) return;
-                const call = peer.call(conn.peer, localStream, { sdpTransform: raiseStartBitrate });
-                if (!call) return;
-                activeCalls.set(conn.peer, call);
+              if (msg && msg.type === 'VIEWER_PROFILE' && typeof msg.nickname === 'string') {
+                viewerNicknames.set(conn.peer, normalizeNickname(msg.nickname));
                 updateViewerCount();
-                setTimeout(() => boostSenderBitrate(call.peerConnection), 1000);
-                const updateState = () => {
-                  if (activeCalls.get(conn.peer) !== call) return;
-                  if (['failed', 'closed'].includes(call.peerConnection?.connectionState)) call.close();
-                  else updateViewerCount();
-                };
-                call.peerConnection?.addEventListener('connectionstatechange', updateState);
-                const removeCall = () => {
-                  call.peerConnection?.removeEventListener('connectionstatechange', updateState);
-                  if (activeCalls.get(conn.peer) !== call) return;
-                  activeCalls.delete(conn.peer);
-                  updateViewerCount();
-                };
-                call.on('close', removeCall);
-                call.on('error', () => { removeCall(); call.close(); });
+                return;
+              }
+              if (msg === 'REQUEST_STREAM' && localStream) {
+                startViewerCall(conn.peer);
               }
             });
             conn.on('close', () => {
               if (hostConnections.get(conn.peer) !== conn) return;
               hostConnections.delete(conn.peer);
+              viewerNicknames.delete(conn.peer);
               activeCalls.get(conn.peer)?.close();
             });
           });
         }
+        // Snapshot the map because adding audio may replace a call during this pass.
+        await Promise.all(Array.from(activeCalls, ([peerId, call]) => updateViewerStream(peerId, call, newStream)));
       } catch (err) {
+        if (captureId !== captureGeneration) return;
         showHostFeedback(err.name === 'NotAllowedError' ? 'Seleção cancelada. Você pode tentar novamente.' :
           'Não foi possível compartilhar a tela. Verifique a permissão e o suporte do navegador.');
       } finally {
@@ -814,56 +1028,92 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       activeCalls.clear();
       hostConnections.clear();
       viewerNumbers.clear();
+      viewerNicknames.clear();
       viewerSequence = 0;
       updateViewerCount();
       if (peer) {
         peer.destroy();
         peer = null;
       }
+      setLiveStatus(false, '');
       hidePlayer();
-      changeScreenBtn.style.display = 'none';
-      stopStreamBtn.style.display = 'none';
       hostActions.hidden = true;
-      hostAudioStatus.hidden = true;
+      delete hostAudioStatus.dataset.audio;
+      hostAudioLabel.textContent = '';
+      hostLiveFeedback.textContent = '';
       videoEl.srcObject = null;
-      showHostFeedback('Você pode selecionar uma tela para transmitir novamente.');
-      stateCard.style.display = '';
-      setLiveStatus(false, 'Encerrado');
+      showHostFeedback('Compartilhamento encerrado. Você pode selecionar uma tela novamente.');
       cardBtn.focus?.({ preventScroll: true });
       window.scrollTo?.({ top: 0, behavior: 'instant' });
     }
 
     // ================= MODO ESPECTADOR (VIEW) =================
     if (MODE === 'view') {
-      setWaitingMessage('Conectando à transmissão', 'A imagem aparece aqui assim que a transmissão começar.');
       if (PREVIEW) {
+        setWaitingMessage('Conectando à transmissão', 'A imagem aparece aqui assim que a transmissão começar.');
         // Testa somente a composição dos estados; não cria Peer, chamadas ou tentativas de conexão.
         const connected = PREVIEW === 'connected';
         document.body.classList.toggle('is-connecting', !connected);
         if (connected) showPlayer();
         else hidePlayer();
-        setLiveStatus(false, connected ? 'Conectado · prévia' : 'Conectando · prévia');
       } else {
-        initViewer();
+        setupViewerNickname();
       }
     }
 
     function initViewer() {
+      // Entry owns the page until confirmed. Download and evaluate PeerJS only
+      // after joining, alongside the player controls that will actually use it.
+      if (typeof Peer !== 'function') {
+        if (viewerScriptLoading) return;
+        viewerScriptLoading = true;
+        cardBtn.disabled = true;
+        const script = document.createElement('script');
+        script.src = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
+        function loadingFailed() {
+          script.remove();
+          viewerScriptLoading = false;
+          cardBtn.disabled = false;
+          setWaitingMessage('Não foi possível iniciar', 'Não conseguimos carregar a conexão. Confira sua internet e tente novamente.');
+          document.body.classList.remove('is-connecting');
+          cardBtn.querySelector('.player-control-content').textContent = 'Tentar novamente';
+          cardBtn.style.display = 'inline-flex';
+          cardBtn.onclick = initViewer;
+        }
+        script.addEventListener('load', () => {
+          if (typeof Peer !== 'function') { loadingFailed(); return; }
+          viewerScriptLoading = false;
+          cardBtn.disabled = false;
+          cardBtn.style.display = 'none';
+          initViewer();
+        }, { once: true });
+        script.addEventListener('error', loadingFailed, { once: true });
+        document.head.append(script);
+        return;
+      }
       peer = new Peer({
         config: {
           iceServers: [
+            { urls: 'stun:stun.cloudflare.com:3478' },
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' }
           ]
         }
       });
 
+      const viewerPeer = peer;
       peer.on('open', () => {
         connectToHost();
       });
 
+      viewerPeer.on('disconnected', () => {
+        if (peer === viewerPeer && !viewerPeer.destroyed) viewerPeer.reconnect?.();
+      });
+
       peer.on('call', (call) => {
+        const previous = viewerMediaCall;
         viewerMediaCall = call;
+        if (previous && previous !== call) previous.close();
         call.answer(undefined, { sdpTransform: raiseStartBitrate });
         watchForBlockedNetwork(call.peerConnection);
         call.on('stream', (remoteStream) => {
@@ -878,7 +1128,6 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
           networkBlocked = false;
           document.body.classList.remove('is-connecting');
           showPlayer();
-          setLiveStatus(true, 'Ao vivo');
 
           videoEl.play().catch(() => {
             videoEl.muted = true;
@@ -887,7 +1136,16 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
           });
         });
 
+        const updateState = () => {
+          if (viewerMediaCall !== call) return;
+          if (['failed', 'closed'].includes(call.peerConnection?.connectionState)) handleHostDisconnect();
+        };
+        call.peerConnection?.addEventListener('connectionstatechange', updateState);
         call.on('close', () => {
+          call.peerConnection?.removeEventListener('connectionstatechange', updateState);
+          if (viewerMediaCall === call) handleHostDisconnect();
+        });
+        call.on('error', () => {
           if (viewerMediaCall === call) handleHostDisconnect();
         });
       });
@@ -910,6 +1168,10 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
 
     function connectToHost() {
       if (!peer || peer.destroyed || viewerConnected) return;
+      if (peer.disconnected) {
+        peer.reconnect?.();
+        return;
+      }
       const pending = viewerDataConnection;
       if (pending && Date.now() - viewerAttemptStartedAt < VIEWER_ATTEMPT_TIMEOUT_MS) return;
       if (pending) {
@@ -919,9 +1181,13 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       }
       viewerAttemptStartedAt = Date.now();
       const conn = peer.connect(ROOM_ID, { reliable: true });
+      const previous = viewerDataConnection;
       viewerDataConnection = conn;
+      if (previous && previous !== conn) previous.close();
       watchForBlockedNetwork(conn.peerConnection);
       conn.on('open', () => {
+        if (viewerDataConnection !== conn) return;
+        sendViewerProfile();
         conn.send('REQUEST_STREAM');
       });
       conn.on('close', () => {
@@ -953,16 +1219,34 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
 
   </script>
   <script type="module">
-    import { attachPlayerControls } from '/player-controls.mjs';
+    ${hasNicknameEntry ? `// The decorative entry scene is independent of deferred player/PeerJS setup.
+    if (document.body.classList.contains('nickname-entry-active')) {
+      Promise.all([import('/nickname-crowd.mjs'), import('/button-motion.mjs')]).then(([{ attachNicknameCrowd }, { attachButtonMotion }]) => {
+        const screen = document.getElementById('nickname-screen');
+        if (!screen.hidden && document.body.classList.contains('nickname-entry-active')) {
+          attachNicknameCrowd(document.getElementById('nickname-crowd'), screen, document.getElementById('nickname-form'));
+          screen.querySelectorAll('[data-button-motion]').forEach(button => attachButtonMotion(button));
+        }
+      }).catch(() => {});
+      await new Promise(resolve => document.addEventListener('viewerjoined', resolve, { once: true }));
+    }` : ''}
+    const [{ attachPlayerControls }, { attachButtonMotion }] = await Promise.all([
+      import('/player-controls.mjs'), import('/button-motion.mjs')
+    ]);
     attachPlayerControls(document.getElementById('video-wrapper'), document.getElementById('screen-video'));
+    document.querySelectorAll('.nickname-form [data-button-motion]').forEach(button => attachButtonMotion(button));
   </script>
   ${safeMode === 'host' ? `<script type="module">
     import { attachHostDiorama } from '/host-diorama.mjs';
+    import { attachHostLiveEye } from '/host-live-eye.mjs';
+    import { attachAudienceEyes } from '/audience-eyes.mjs';
     import { attachButtonMotion } from '/button-motion.mjs';
     document.querySelectorAll('[data-button-motion]').forEach(button => {
       attachButtonMotion(button, document, { particles: button.dataset.clickParticles === 'true' });
     });
     attachHostDiorama(document.getElementById('host-diorama'), document.getElementById('video-wrapper'));
+    attachHostLiveEye(document.querySelector('.host-live-emblem'), document.getElementById('status-text'));
+    attachAudienceEyes(document.getElementById('audience-list'));
   </script>` : ''}
 </body>
 </html>`;

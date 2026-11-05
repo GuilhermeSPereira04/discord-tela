@@ -32,7 +32,7 @@ Em 844×390 CSS px, as alturas mínimas do conteúdo e do quadro da prévia empu
 
 `styles/src/components/_player.scss` concentra o layout. A raiz ativa tem linhas `minmax(0, 1fr) auto auto`: imagem, controles e eventual aviso. Os filhos flex/grid têm mínimos zerados para que o vídeo ceda espaço à barra. O corte por overflow se limita ao palco do vídeo, sem cortar os controles.
 
-O espectador usa `100dvh`; a barra considera as áreas seguras laterais e inferiores, e o cabeçalho considera o recorte superior. Em larguras inferiores a 24 rem, o áudio e as ações ficam em duas linhas. Se PiP não for suportado, seu botão fica oculto e a ação restante ocupa o espaço disponível. Em paisagem baixa, cabeçalho e espaçamento encolhem, sem reduzir a área de toque. Nomes de sala longos usam reticências no cabeçalho conectado, mantendo o texto completo no DOM.
+O espectador usa `100dvh`; a barra considera as áreas seguras laterais e inferiores. A revisão de volume de 04/11/2026 substituiu as duas linhas nos telefones por um ícone que abre um painel vertical. No desktop, hover/foco revela o volume horizontal. As ações usam ícones abaixo de 40 rem; prévia e transmissão real seguem a mesma regra. Só abaixo de 20 rem as ações passam à linha seguinte. Se PiP não for suportado, seu botão fica oculto. Em paisagem baixa, o espaçamento encolhe sem reduzir a área de toque. Veja a análise e os limites da validação atual em [player-polish-references.md](player-polish-references.md#volume-expansível--04112026).
 
 Não há bloqueio de orientação, recarga, remount do vídeo ou chamada para entrar/sair de tela cheia em eventos de resize. A altura mínima de 16 rem permite rolagem em áreas excepcionalmente baixas; não se corta o acesso aos controles para forçar toda a página a caber.
 

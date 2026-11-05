@@ -7,8 +7,3 @@
   &:hover { background: var(--button-motion-background, var(--color-surface)); border-color: var(--button-motion-border, var(--color-line-strong)); }
 }
 .motion-button { @include motion.directional-fill; }
-.motion-button.motion-button--danger {
-  --button-motion-fill: var(--color-blood);
-  --button-motion-ink: var(--color-on-blood);
-  border-color: var(--color-blood);
-}

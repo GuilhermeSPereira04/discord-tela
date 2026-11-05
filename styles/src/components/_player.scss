@@ -7,15 +7,6 @@
   block-size: 100dvh;
   min-block-size: 16rem;
 }
-.viewer.player-active .brand { flex-wrap: nowrap; }
-.viewer.player-active .room-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  letter-spacing: -.02em;
-}
-.viewer.player-active .badge { flex-shrink: 0; }
-.viewer.player-active header { padding-block-start: max(var(--space-4), env(safe-area-inset-top)); }
 .player-active main {
   display: flex;
   align-items: stretch;
@@ -100,10 +91,12 @@
   to { opacity: 1; transform: translateY(0); }
 }
 .controls-bar {
+  position: relative;
+  z-index: 2;
   display: grid;
-  grid-template-columns: minmax(6.5rem, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-4);
   min-inline-size: 0;
   padding: var(--space-3) max(var(--page-gutter), env(safe-area-inset-right)) max(var(--space-3), env(safe-area-inset-bottom)) max(var(--page-gutter), env(safe-area-inset-left));
   background: var(--color-canvas);
@@ -125,7 +118,19 @@
 // area padding. No transparent bar or reserved strip remains over the video.
 #video-wrapper.is-controls-hidden { grid-template-rows: minmax(0, 1fr); }
 .player-audio, .player-actions { @include m.row(var(--space-2)); min-inline-size: 0; }
+.player-audio {
+  justify-self: start;
+  position: relative;
+  inline-size: fit-content;
+  gap: 0;
+  border-radius: var(--player-target-size);
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.player-audio.is-volume-open { background: var(--color-surface); }
+.player-audio #mute-btn, .player-audio .volume-toggle { color: var(--color-text); }
+.player-audio .audio-icon { inline-size: 1.25rem; block-size: 1.25rem; }
 .player-actions { justify-content: flex-end; }
+.pip-icon { display: none; }
 .player-control {
   @include m.focus-ring;
   display: inline-flex;
@@ -237,16 +242,29 @@
 }
 .player-expanded { overflow: hidden; }
 
-@media (width < 24rem) {
-  .controls-bar { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); padding-block-start: var(--space-2); }
-  .player-audio { justify-content: space-between; }
-  .player-audio .volume-control { flex: 1; inline-size: auto; }
-  .player-actions .player-control { flex: 1 1 0; }
-  .player-actions .player-control--primary { flex-grow: 2; }
+// One layout for both the real player and its preview, in either orientation.
+// Compact action labels before sacrificing image height to another row.
+// Audio owns its own disclosure layout, independent of these action labels.
+@media (width < 40rem) {
+  .controls-bar { gap: var(--space-2); }
+  .player-actions { gap: var(--space-1); }
+  .player-actions .player-control {
+    --button-motion-padding: 0;
+    inline-size: var(--player-target-size);
+    padding: 0;
+    svg { inline-size: 1.25rem; block-size: 1.25rem; }
+  }
+  .player-control-label, .player-label-stack { display: none; }
+  .pip-icon { display: block; }
+}
+// Below the supported 320 px phone width (also reached with large text zoom),
+// let the actions wrap without shrinking any target or stretching the volume.
+@media (width < 20rem) {
+  .controls-bar { grid-template-columns: minmax(0, 1fr); }
+  .player-actions { justify-content: flex-end; }
 }
 @media (height < 30rem) and (width >= 40rem) {
-  .viewer.player-active header { min-block-size: 3rem; padding-block-start: max(var(--space-2), env(safe-area-inset-top)); padding-block-end: var(--space-2); }
-  .viewer.player-active .preview-nav { padding-block: 0; }
+  .viewer.player-active .preview-nav { padding-block-start: 0; }
   .controls-bar { padding-block-start: var(--space-2); padding-block-end: max(var(--space-2), env(safe-area-inset-bottom)); }
   .preview-frame p, .player-waiting p { margin-block-start: var(--space-2); }
 }

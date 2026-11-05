@@ -6,7 +6,7 @@
   justify-content: flex-end;
   padding: var(--space-3) var(--page-gutter);
   flex-shrink: 0;
-  border-block-end: 0;
+  padding-block-end: max(var(--space-3), env(safe-area-inset-bottom));
   background: var(--color-canvas);
   > span { color: var(--color-muted); font-size: var(--text-small); margin-inline-end: auto; }
   .motion-link {
