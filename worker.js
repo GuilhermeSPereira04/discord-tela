@@ -277,6 +277,18 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       <div class="state-icon" id="card-icon" aria-hidden="true">${safeMode === 'host' ? '<div id="host-diorama" class="host-diorama" data-state="loading"><img data-src="/diorama/poster.jpg" width="224" height="224" alt="" decoding="async"></div>' : CONNECTION_SYMBOL}</div>
       <h1 id="card-title">Carregando...</h1>
       <p id="card-desc">Preparando conexão P2P direta.</p>
+      ${safeMode === 'host' ? `<div id="quality-prepare-slot" class="quality-prepare-slot">
+        <fieldset id="host-quality" class="host-quality" aria-describedby="quality-detail">
+          <legend>Prioridade da imagem</legend>
+          <div class="quality-options">
+            <label class="quality-option"><input type="radio" name="quality" value="sharp" checked><span><strong>Nítida</strong><small>Texto, código e apresentações</small></span></label>
+            <label class="quality-option"><input type="radio" name="quality" value="fluid"><span><strong>Fluida</strong><small>Jogos e vídeos</small></span></label>
+            <label class="quality-option"><input type="radio" name="quality" value="light"><span><strong>Leve</strong><small>Menor uso de upload</small></span></label>
+          </div>
+          <p id="quality-detail" class="quality-detail">Prioriza a definição de textos quando a conexão fica limitada.</p>
+          <p id="quality-feedback" class="quality-feedback" role="status" aria-atomic="true"></p>
+        </fieldset>
+      </div>` : ''}
       <button id="card-btn" class="btn full player-control motion-button" data-button-motion data-click-particles="true" data-fill-state="idle" type="button" style="display:none"><span class="player-control-content">Selecionar tela</span></button>
       ${safeMode === 'host' ? '<p id="host-feedback" class="host-feedback" role="status" hidden></p>' : ''}
       ${safeMode === 'view' && !isPreview ? '<button id="edit-waiting-nickname" class="nickname-edit" type="button" hidden>Alterar apelido</button>' : ''}
@@ -384,6 +396,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       </div>
       <p id="player-notice" class="player-notice" role="status" aria-live="polite" hidden></p>
     </div>
+    ${safeMode === 'host' ? '<div id="quality-live-slot" class="quality-live-slot"></div>' : ''}
   </main>
   ${safeMode === 'host' ? `<aside class="host-audience" aria-labelledby="audience-title">
     <div class="audience-heading"><h2 id="audience-title">Quem está na sala</h2><span id="viewer-count" class="audience-count" role="status" aria-live="polite" aria-label="0 espectadores na sala">0</span></div>
@@ -391,14 +404,6 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
     <ul id="audience-list" class="audience-list" aria-label="Espectadores conectados"></ul>
     <p id="audience-identity" class="audience-caption" hidden>Apelidos escolhidos por quem assiste.</p>
     <div class="host-invite"><button id="copy-view-link" class="host-copy-link motion-button" data-button-motion type="button"><span class="button-motion-content"><svg class="host-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2"/></svg>Copiar link de convite</span></button><p id="copy-feedback" class="audience-caption" role="status" hidden></p><input id="view-link-fallback" class="view-link-fallback" aria-label="Link para assistir" readonly hidden></div>
-    <fieldset class="host-quality">
-      <legend>Prioridade da imagem</legend>
-      <div class="quality-options">
-        <label class="quality-option"><input type="radio" name="quality" value="sharp" checked><span><strong>Nítida</strong><small>Texto, código e slides. Com pouca banda, perde fluidez antes de perder definição.</small></span></label>
-        <label class="quality-option"><input type="radio" name="quality" value="fluid"><span><strong>Fluida</strong><small>Jogos e vídeos. Com pouca banda, perde definição antes de travar.</small></span></label>
-        <label class="quality-option"><input type="radio" name="quality" value="light"><span><strong>Leve</strong><small>720p a 30 fps, para upload fraco.</small></span></label>
-      </div>
-    </fieldset>
   </aside></div>` : ''}
   ${showPreviewNav ? `<nav class="preview-nav" aria-label="Prévia dos estados do espectador">
     <span>Prévia da interface${isPreview ? ' · sem transmissão real' : ''}</span>
@@ -508,6 +513,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       videoWrapper.classList.add('active');
       document.body.classList.add('player-active');
       stateCard.style.display = 'none';
+      if (MODE === 'host') document.getElementById('quality-live-slot').append(document.getElementById('host-quality'));
       videoWrapper.dispatchEvent(new Event('playerstatechange'));
       if (enteringHost) {
         document.getElementById('host-live-title')?.focus?.({ preventScroll: true });
@@ -520,6 +526,10 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       document.body.classList.remove('player-active');
       videoWrapper.dataset.state = 'waiting';
       stateCard.style.display = '';
+      if (MODE === 'host') {
+        document.getElementById('quality-prepare-slot').append(document.getElementById('host-quality'));
+        document.getElementById('quality-feedback').textContent = '';
+      }
       videoWrapper.dispatchEvent(new Event('playerstatechange'));
     }
 
@@ -699,12 +709,12 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       return 3500000;
     }
 
-    function boostSenderBitrate(peerConnection) {
-      if (!peerConnection || !peerConnection.getSenders) return;
+    async function boostSenderBitrate(peerConnection) {
+      if (!peerConnection || !peerConnection.getSenders) return false;
       const profile = qualityProfile();
       const maxBitrate = Math.min(bitrateForViewers(activeCalls.size), profile.cap);
-      peerConnection.getSenders().forEach(async (sender) => {
-        if (!sender.track) return;
+      const results = await Promise.all(peerConnection.getSenders().map(async (sender) => {
+        if (!sender.track) return true;
         try {
           const params = sender.getParameters();
           if (!params.encodings || !params.encodings.length) params.encodings = [{}];
@@ -718,8 +728,10 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
           params.encodings[0].priority = 'high';
           params.encodings[0].networkPriority = 'high';
           await sender.setParameters(params);
-        } catch (e) {}
-      });
+          return true;
+        } catch (e) { return sender.track?.kind !== 'video'; }
+      }));
+      return results.every(Boolean);
     }
 
     function startViewerCall(peerId) {
@@ -804,29 +816,75 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       return sdp;
     }
 
+    const qualityControl = document.getElementById('host-quality');
+    const qualityDetail = document.getElementById('quality-detail');
+    const qualityFeedback = document.getElementById('quality-feedback');
+    const qualityDescriptions = {
+      sharp: 'Prioriza a definição de textos quando a conexão fica limitada.',
+      fluid: 'Prioriza o movimento quando a conexão fica limitada.',
+      light: 'Busca 720p, com limite de 30 fps e menor uso de upload.'
+    };
+    // One native radio group moves between the preparation and live slots.
+    // Keep the requested preference separate from successful browser updates.
+    let qualityPending = false;
+    function syncQualityControl() {
+      if (!qualityControl) return;
+      qualityControl.disabled = qualityPending || document.body.dataset.capturePending === 'true';
+      qualityControl.setAttribute('aria-busy', String(qualityPending));
+      qualityDetail.textContent = qualityDescriptions[qualityKey];
+      (document.querySelectorAll?.('input[name="quality"]') || []).forEach(input => {
+        input.checked = input.value === qualityKey;
+      });
+    }
     async function setQuality(key) {
-      if (!QUALITY_PROFILES[key] || key === qualityKey) return;
+      if (!QUALITY_PROFILES[key] || key === qualityKey || qualityControl?.disabled) return;
       qualityKey = key;
       try { localStorage.setItem('tela-quality', key); } catch (e) {}
       const track = localStream?.getVideoTracks()[0];
+      qualityFeedback.textContent = '';
+      syncQualityControl();
       if (!track) return;
+      const stream = localStream;
       const profile = qualityProfile();
-      if ('contentHint' in track) track.contentHint = profile.hint;
+      const focusedRadio = document.activeElement;
+      qualityPending = true;
+      syncQualityControl();
+      qualityFeedback.textContent = 'Aplicando preferência…';
+      let accepted = true;
       try {
+        if ('contentHint' in track) track.contentHint = profile.hint;
         await track.applyConstraints({
           width: { ideal: profile.width },
           height: { ideal: profile.height },
           frameRate: { ideal: profile.fps, max: profile.fps }
         });
-      } catch (e) {}
-      appliedViewerCount = -1;
-      applyBitrateToAll();
+      } catch (e) { accepted = false; }
+      try {
+        if (localStream !== stream) return;
+        const results = await Promise.all(Array.from(activeCalls.values(), call => boostSenderBitrate(call.peerConnection)));
+        accepted = accepted && results.every(Boolean);
+        if (localStream !== stream) return;
+        qualityFeedback.textContent = accepted
+          ? 'Preferência enviada ao navegador. A qualidade depende da conexão.'
+          : 'Preferência salva. O navegador não aceitou todos os ajustes nesta transmissão.';
+      } catch (e) {
+        if (localStream === stream) qualityFeedback.textContent = 'Preferência salva. Não foi possível atualizar todos os ajustes nesta transmissão.';
+      } finally {
+        qualityPending = false;
+        syncQualityControl();
+        // Disabling a native radio temporarily drops its focus. Restore only
+        // when the user has not moved to another control or stopped sharing.
+        if (localStream === stream && focusedRadio?.name === 'quality' && document.activeElement === document.body) {
+          focusedRadio.focus({ preventScroll: true });
+        }
+      }
     }
 
     (document.querySelectorAll?.('input[name="quality"]') || []).forEach((input) => {
       input.checked = input.value === qualityKey;
       input.addEventListener('change', () => { if (input.checked) setQuality(input.value); });
     });
+    syncQualityControl();
 
     // ================= MENSAGEM NO DISCORD =================
     // A página avisa o Worker só quando algo muda, no máximo a cada 5 s.
@@ -899,6 +957,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
       cardBtn.disabled = true;
       changeScreenBtn.disabled = true;
       document.body.dataset.capturePending = 'true';
+      syncQualityControl();
       document.body.dispatchEvent(new Event('hostcapturechange'));
       const captureId = ++captureGeneration;
       showHostFeedback('');
@@ -1005,6 +1064,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
           'Não foi possível compartilhar a tela. Verifique a permissão e o suporte do navegador.');
       } finally {
         delete document.body.dataset.capturePending;
+        syncQualityControl();
         document.body.dispatchEvent(new Event('hostcapturechange'));
         cardBtn.disabled = false;
         changeScreenBtn.disabled = false;
@@ -1240,6 +1300,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
     import { attachHostDiorama } from '/host-diorama.mjs';
     import { attachHostLiveEye } from '/host-live-eye.mjs';
     import { attachAudienceEyes } from '/audience-eyes.mjs';
+    import { attachQualityFlow } from '/quality-flow.mjs';
     import { attachButtonMotion } from '/button-motion.mjs';
     document.querySelectorAll('[data-button-motion]').forEach(button => {
       attachButtonMotion(button, document, { particles: button.dataset.clickParticles === 'true' });
@@ -1247,6 +1308,7 @@ function renderModernApp(room, mode, title, preview, localPreviewEnabled = false
     attachHostDiorama(document.getElementById('host-diorama'), document.getElementById('video-wrapper'));
     attachHostLiveEye(document.querySelector('.host-live-emblem'), document.getElementById('status-text'));
     attachAudienceEyes(document.getElementById('audience-list'));
+    attachQualityFlow(document.querySelector('.quality-options'));
   </script>` : ''}
 </body>
 </html>`;

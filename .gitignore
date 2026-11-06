@@ -16,7 +16,8 @@ pnpm-debug.log*
 dist/
 styles/generated/
 public/diorama/
-artifacts/frontpush-research/
+# Capturas, relatórios de QA e pacotes de entrega locais
+artifacts/
 
 # Arquivos compactados e temporários de deploy antigo
 *.zip
