@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHmac, generateKeyPairSync, sign } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import vm from 'node:vm';
 import { transform } from 'esbuild';
 import { createTestHarness } from 'wrangler';
@@ -90,5 +90,15 @@ try{
       collect(code,origin+pathname);
     }
   }
-  console.log(`Validated production artifact: ${cases.length} signed/invalid cases, Discord ping/auth and ${checked.size} static assets/imports.`);
+  // Every published module must be reachable from a rendered page or the
+  // diorama worker entry/manifest above. Catch abandoned effects before deploy.
+  async function checkPublishedModules(directory = 'public', prefix = '') {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const relative = prefix + entry.name;
+      if (entry.isDirectory()) await checkPublishedModules(directory + '/' + entry.name, relative + '/');
+      else if (entry.name.endsWith('.mjs')) assert.ok(checked.has('/' + relative), 'Unreferenced published module: ' + relative);
+    }
+  }
+  await checkPublishedModules();
+  console.log(`Validated production artifact: ${cases.length} signed/invalid cases, Discord ping/auth and ${checked.size} static assets/imports; no orphan published modules.`);
 }finally{await server.close();}

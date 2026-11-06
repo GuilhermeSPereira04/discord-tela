@@ -17,6 +17,7 @@ for(const link of links){
     assert.ok(html.includes('attachAudienceEyes'));
     assert.ok(html.includes('.audience-list.has-audience-eyes'));
     assets.add('/audience-eyes.mjs');
+    assets.add('/quality-ocean.mjs');
   }
   if(link.includes('mode=view')&&!/[?&]preview=(waiting|connected)/.test(link)){
     assert.ok(html.includes('id="nickname-dialog"'));

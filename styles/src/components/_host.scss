@@ -13,7 +13,7 @@
   text-align: start;
   h1 { grid-column: 2; font-size: clamp(2.75rem, 1.75rem + 3.2vw, 4.75rem); font-weight: 450; font-stretch: 96%; line-height: 1.02; letter-spacing: -.055em; }
   #card-desc { grid-column: 2; max-inline-size: 30ch; margin: var(--space-5) 0 var(--space-6); }
-  .state-icon { grid-column: 1; grid-row: 1 / 5; inline-size: min(100%, var(--host-art-size)); block-size: auto; aspect-ratio: 1; margin: 0; border: 0; border-radius: 0; &::after { content: none; } }
+  .state-icon { grid-column: 1; grid-row: 1 / 6; inline-size: min(100%, var(--host-art-size)); block-size: auto; aspect-ratio: 1; margin: 0; border: 0; border-radius: 0; &::after { content: none; } }
   #card-btn {
     grid-column: 2; inline-size: fit-content; min-inline-size: 12rem;
     --button-motion-background: var(--color-surface-raised);
@@ -189,47 +189,88 @@
 }
 .host-quality {
   min-inline-size: 0;
-  margin: var(--space-6) 0 0;
+  margin: 0;
   padding: 0;
   border: 0;
   legend { padding: 0; margin-block-end: var(--space-3); font-size: var(--text-label); font-weight: var(--weight-medium); }
+  &:disabled { .quality-option { cursor: wait; } input { cursor: wait; } }
 }
-.quality-options { display: grid; gap: var(--space-2); }
-// Keep upstream's quality choice available before capture without exposing
-// the live audience panel in the opening screen.
-.host:not(.player-active) .host-audience {
-  display: block;
-  inline-size: min(calc(100% - 2 * var(--page-gutter)), 80rem);
-  margin: 0 auto;
-  padding-block-end: max(var(--space-7), env(safe-area-inset-bottom));
-  > :not(.host-quality) { display: none; }
-  .host-quality { margin: 0; }
-  .quality-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  @include m.below('compact') {
-    .quality-options { grid-template-columns: minmax(0, 1fr); }
-  }
+.quality-prepare-slot {
+  grid-column: 2;
+  min-inline-size: 0;
+  inline-size: 100%;
+  max-inline-size: 36rem;
+  margin-block-end: var(--space-6);
+  text-align: start;
 }
+.quality-live-slot { display: none; }
+.quality-options {
+  position: relative; isolation: isolate;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2);
+}
+.quality-flow-layer { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; z-index: -1; pointer-events: none; }
 .quality-option {
+  --quality-color: #64bfe3;
+  --quality-rgb: 30 132 174;
+  &:has(input[value='fluid']) { --quality-color: #60d6a3; --quality-rgb: 14 153 101; }
+  &:has(input[value='light']) { --quality-color: #ef6b7b; --quality-rgb: 174 16 42; }
   @include m.target;
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
+  grid-template-columns: 1rem minmax(0, 1fr);
+  align-content: start;
+  align-items: start;
+  gap: var(--space-2);
+  min-block-size: 8rem;
+  padding: var(--space-4) var(--space-3);
   border: 1px solid var(--color-line);
-  border-radius: var(--radius-small);
+  border-radius: var(--radius-panel);
+  background: radial-gradient(ellipse at 90% 110%, rgb(var(--quality-rgb) / .5), transparent 72%), var(--color-surface);
+  // A permanent dark veil protects HTML text independently of shader phase.
+  &::before { content: ''; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(135deg, rgb(0 0 0 / .45), transparent 75%); pointer-events: none; }
+  > input, > span { position: relative; }
   cursor: pointer;
-  transition: border-color var(--duration-fast) var(--ease-standard);
-  input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
-  strong { display: block; font-size: var(--text-label); font-weight: var(--weight-medium); }
-  small { display: block; margin-block-start: var(--space-1); color: var(--color-muted); font-size: var(--text-small); line-height: 1.45; }
-  // Mesmo marcador do selo "ao vivo": só a opção escolhida acende.
-  &::after { content: ''; inline-size: .375rem; block-size: .375rem; border-radius: 50%; background: transparent; transition: background-color var(--duration-fast) var(--ease-standard); }
-  &:has(input:checked) { border-color: var(--color-line-strong); &::after { background: var(--color-connection-violet-light); } }
+  transition: border-color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard);
+  input {
+    appearance: none;
+    inline-size: 1rem; block-size: 1rem;
+    margin: .125rem 0 0;
+    border: 1px solid var(--color-muted); border-radius: 50%;
+    background: var(--color-canvas);
+    cursor: pointer;
+    &:checked { border-color: var(--quality-color); background: var(--quality-color); box-shadow: inset 0 0 0 4px var(--color-canvas); }
+  }
+  strong { display: block; font-size: var(--text-label); line-height: 1.4; font-weight: var(--weight-medium); }
+  small { display: block; margin-block-start: var(--space-1); color: #d0d0d0; font-size: var(--text-small); line-height: 1.45; }
+  &:has(input:checked) { border-color: var(--quality-color); box-shadow: inset 0 0 0 1px var(--quality-color); }
   &:has(input:focus-visible) { outline: 2px solid var(--color-text); outline-offset: 4px; }
-  @media (hover: hover) and (pointer: fine) { &:hover { border-color: var(--color-line-strong); } }
-  @include m.reduced-motion { transition: none; &::after { transition: none; } }
+  @media (hover: hover) and (pointer: fine) { &:hover:not(:has(input:disabled, input:checked)) { border-color: var(--quality-color); } }
+  @include m.reduced-motion { transition: none; }
+  @media (forced-colors: active) { background: Canvas; &::before { display: none; } small { color: CanvasText; } input { appearance: auto; box-shadow: none; } &:has(input:checked) { border-color: Highlight; } }
+}
+.quality-options[data-flow-renderer='webgl2'] .quality-option { background: transparent; }
+// Both host states share the ocean. Labels stay native below the swimming band,
+// with the same sea blue, emerald and wine palette.
+.host:not(.player-active) .quality-options {
+  .quality-option {
+    min-block-size: 18rem;
+    align-content: end;
+    &::before { background: linear-gradient(0deg, rgb(3 9 13 / .95), rgb(3 9 13 / .65) 30%, transparent 63%); }
+    > span { min-block-size: 5.25rem; }
+    > input { margin-block-start: .3rem; }
+  }
+}
+.host-quality .quality-detail, .host-quality .quality-feedback {
+  color: var(--color-muted);
+  font-size: var(--text-small);
+  line-height: var(--leading-body);
+  text-align: start;
+  margin: var(--space-3) 0 0;
+}
+.host-quality .quality-detail { min-block-size: 3em; max-inline-size: 54ch; }
+.host-quality .quality-feedback {
+  color: var(--color-text);
+  &:empty { margin: 0; }
 }
 .host.player-active {
   --host-live-gutter: clamp(1.5rem, 5vw, 5.5rem);
@@ -260,7 +301,16 @@
     span { margin-block-start: var(--space-3); max-inline-size: 27ch; }
   }
   .host-invite { margin-block-start: var(--space-7); }
-  .host-quality { margin-block-start: var(--space-7); }
+  .quality-live-slot { display: block; min-inline-size: 0; max-inline-size: 40rem; padding-block-start: var(--space-4); border-block-start: 1px solid var(--color-line); }
+  .quality-option {
+    min-block-size: 12rem;
+    align-content: end;
+    align-items: start;
+    &::before { background: linear-gradient(0deg, rgb(4 5 8 / .97), rgb(4 5 8 / .65) 27%, transparent 59%); }
+    > span { min-block-size: 3.8rem; }
+    > input { margin-block-start: .3rem; }
+  }
+  .host-quality .quality-detail { min-block-size: 0; }
 }
 @keyframes host-live-arrive {
   from { opacity: 0; transform: translateY(8px); }
@@ -274,6 +324,7 @@
     h1 { grid-column: 1; font-size: clamp(2.75rem, 2.25rem + 2vw, 3.5rem); }
     .state-icon { grid-column: 1; grid-row: auto; justify-self: center; margin-block-end: var(--space-5); }
     #card-desc { grid-column: 1; margin-inline: auto; }
+    .quality-prepare-slot { grid-column: 1; justify-self: center; }
     #card-btn { grid-column: 1; justify-self: center; inline-size: min(100%, 22rem); }
     .host-feedback { grid-column: 1; margin-inline: auto; }
   }
@@ -287,6 +338,16 @@
   }
 }
 @include m.below('compact') {
+  .quality-options { grid-template-columns: minmax(0, 1fr); }
+  .quality-option { min-block-size: 5rem; padding: var(--space-3) var(--space-4); align-items: center; }
+  .quality-option input { margin-block: 0; }
+  .quality-option small { margin-block-start: 0; }
+  .host:not(.player-active) .quality-options .quality-option {
+    min-block-size: 12rem;
+    align-content: end;
+    align-items: start;
+    > span { min-block-size: 3.25rem; }
+  }
   .host-capture-status { --host-eye-width: 2rem; }
   .host-capture-bar { gap: var(--space-4); }
   .host-capture-buttons {
@@ -296,6 +357,7 @@
   }
   .host.player-active {
     --host-live-gutter: clamp(1rem, 5vw, 1.5rem);
+    .quality-option { min-block-size: 10rem; > span { min-block-size: 3.25rem; } }
     .host-workspace { padding-block: max(var(--space-6), env(safe-area-inset-top)) max(var(--space-7), env(safe-area-inset-bottom)); }
   }
 }

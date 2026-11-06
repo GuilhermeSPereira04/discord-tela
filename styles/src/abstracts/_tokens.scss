@@ -23,7 +23,6 @@ $breakpoints: ('compact': 40rem, 'wide': 64rem);
   @each $name, $value in $colors { --color-#{$name}: #{$value}; }
   @each $name, $value in $space { --space-#{$name}: #{$value}; }
   --font-sans: 'Instrument Sans', 'Helvetica Neue', Arial, sans-serif;
-  --font-mono: 'SFMono-Regular', Consolas, monospace;
   --weight-regular: 400;
   --weight-medium: 500;
   --leading-tight: 1.12;
@@ -33,7 +32,6 @@ $breakpoints: ('compact': 40rem, 'wide': 64rem);
   --text-label: .875rem;
   --text-body: 1rem;
   --text-title: clamp(1.75rem, 1.464rem + 1.43vw, 2.75rem);
-  --text-display: clamp(1.75rem, 1.179rem + 2.86vw, 3.75rem);
   --page-gutter: clamp(1rem, .714rem + 1.43vw, 2rem);
   --radius-small: .25rem;
   --radius-panel: .5rem;

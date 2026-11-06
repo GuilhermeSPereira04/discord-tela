@@ -25,7 +25,7 @@ O conteúdo pode ser envolvido automaticamente quando não há `.button-motion-c
 ## Sass
 
 - `styles/src/abstracts/_button-motion.scss`: mixin `directional-fill`, responsável por recorte, inversão e decoração.
-- `styles/src/components/_button-motion.scss`: classe `.motion-button` e variante `.motion-button--danger`.
+- `styles/src/components/_button-motion.scss`: classe `.motion-button` e integração com `.btn`.
 - `public/button-motion.mjs`: estados de interação e partículas opcionais.
 - `public/fullscreen-feedback.mjs`: adaptador dos nomes existentes no player; PiP continua com seu contorno próprio.
 
@@ -36,7 +36,7 @@ Use a classe junto ao componente de botão existente. Para um componente que pre
 .minha-acao { @include motion.directional-fill; }
 ```
 
-`--button-motion-fill` e `--button-motion-ink` controlam o painel e seu texto. `--button-motion-padding` deve coincidir com o padding do botão; `--button-motion-inset` reserva a borda externa, quando houver. Na classe `.btn`, use `--button-motion-background`/`--button-motion-border` para customizar a base sem sobrescrever o fallback sem recorte. A variante danger usa os tokens vermelhos existentes e mantém texto branco.
+`--button-motion-fill` e `--button-motion-ink` controlam o painel e seu texto. `--button-motion-padding` deve coincidir com o padding do botão; `--button-motion-inset` reserva a borda externa, quando houver. Na classe `.btn`, use `--button-motion-background`/`--button-motion-border` para customizar a base sem sobrescrever o fallback sem recorte.
 
 ## Custo e limites
 

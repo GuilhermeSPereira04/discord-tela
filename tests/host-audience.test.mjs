@@ -510,6 +510,74 @@ test('quality choices control capture and existing senders without replacing med
   assert.equal(f.run('peer').calls.length, 1);
 });
 
+test('quality choice moves with the host between preparation and live without losing its preference', async () => {
+  const f = fixture();
+  await f.run('setQuality("light")');
+  assert.match(f.get('quality-detail').textContent, /720p/);
+  await f.run('startHostStream()');
+  assert.equal(f.get('quality-live-slot').children.at(-1), f.get('host-quality'));
+  f.run('stopHostStream()');
+  assert.equal(f.get('quality-prepare-slot').children.at(-1), f.get('host-quality'));
+  assert.equal(f.run('qualityKey'), 'light');
+  assert.equal(f.get('quality-feedback').textContent, '');
+});
+
+test('pending browser updates lock the radio group and stopping discards late quality feedback', async () => {
+  const f = fixture(); await f.run('startHostStream()');
+  let finish;
+  f.run('localStream.getVideoTracks()[0]').applyConstraints = () => new Promise(resolve => { finish = resolve; });
+  const changing = f.run('setQuality("fluid")');
+  assert.equal(f.get('host-quality').disabled, true);
+  assert.match(f.get('quality-feedback').textContent, /Aplicando/);
+  await f.run('setQuality("light")');
+  assert.equal(f.run('qualityKey'), 'fluid');
+  f.run('stopHostStream()');
+  finish(); await changing;
+  assert.equal(f.get('quality-feedback').textContent, '');
+  assert.equal(f.get('host-quality').disabled, false);
+});
+
+test('rejected capture or sender updates never announce successful application', async () => {
+  for (const failure of ['capture', 'sender']) {
+    const f = fixture(); await f.run('startHostStream()');
+    const track = f.run('localStream.getVideoTracks()[0]');
+    track.applyConstraints = async () => { if (failure === 'capture') throw new Error('Unsupported constraints'); };
+    f.connect().emit('data', 'REQUEST_STREAM');
+    const call = f.run('peer').calls[0];
+    call.senders[0].setParameters = async () => { if (failure === 'sender') throw new Error('Unsupported parameters'); };
+    await f.run('setQuality("light")');
+    assert.match(f.get('quality-feedback').textContent, /não aceitou todos/);
+    assert.equal(f.get('host-quality').disabled, false);
+    assert.equal(f.run('peer').calls.length, 1);
+    assert.equal(f.run('qualityKey'), 'light');
+  }
+});
+
+test('capture selection locks quality until the browser returns, including cancellation', async () => {
+  const f = fixture();
+  let cancel;
+  f.run('navigator.mediaDevices').getDisplayMedia = () => new Promise((resolve, reject) => { cancel = reject; });
+  const capturing = f.run('startHostStream()');
+  assert.equal(f.get('host-quality').disabled, true);
+  await f.run('setQuality("light")');
+  assert.equal(f.run('qualityKey'), 'sharp');
+  cancel({ name: 'NotAllowedError' }); await capturing;
+  assert.equal(f.get('host-quality').disabled, false);
+});
+
+test('quality restores keyboard focus after applying without stealing it from another control', async () => {
+  for (const movedFocus of [false, true]) {
+    const f = fixture(); await f.run('startHostStream()');
+    const radio = new Element(); radio.name = 'quality';
+    const document = f.run('document'); document.activeElement = radio;
+    f.run('localStream.getVideoTracks()[0]').applyConstraints = async () => {
+      document.activeElement = movedFocus ? f.get('stop-stream-btn') : document.body;
+    };
+    await f.run('setQuality("fluid")');
+    assert.equal(Boolean(radio.focused), !movedFocus);
+  }
+});
+
 test('upstream bitrate limits follow the real audience and recover when viewers depart', async () => {
   const f = fixture(); await f.run('startHostStream()');
   const connections = [];

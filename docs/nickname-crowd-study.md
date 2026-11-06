@@ -1,5 +1,91 @@
 # Entrada de apelido: multidão em perspectiva
 
+### Personagens e pesquisa de marcha — 05/11/2026
+
+Sete variantes combinam corpos mais estreitos/largos, mulheres com rabo de
+cavalo, cabelo curto ou coque e calça, túnica ou saia, além de duas variantes
+infantis. Crianças têm escala menor, cabeça relativamente maior, pernas mais
+curtas e ciclos próprios de caminhada. As amplitudes são direção artística,
+não uma simulação clínica nem uma regra de marcha por gênero.
+
+Dos 56 personagens, 9 são crianças e 23 têm apresentação feminina. Há quatro
+casais dentro dessa população. Na versão estreita, são 28 personagens, incluindo
+5 crianças, 13 mulheres e dois casais. São capacidades da cena, incluindo figuras
+fora do viewport; não indicam espectadores conectados.
+
+Cada casal ocupa duas células reservadas, com uma raiz, velocidade e distância
+relativa comuns. As fases da marcha permanecem individuais. Uma recepção pausa
+ambos para não separar o par, mas apenas o personagem escolhido muda de cor e
+recebe o glitch. Isso mantém as pausas e a recuperação do espaçamento existentes.
+
+A marcha ganhou transferência lateral pequena da pelve, absorção contida de
+peso e atraso leve dos braços. O comprimento das pernas e o pé apoiado continuam
+como restrições, inclusive com proporções infantis. O tronco preserva a estética
+robótica; não foram importados clipes de captura de movimento.
+
+Pesquisa aplicada:
+
+- [Animation Mentor, tutorial de Jason Martinsen](https://www.animationmentor.com/blog/tutorial-animating-human-walk-cycle/):
+  contato, absorção, passagem e subida, transferência de peso, braços com atraso
+  e tradução linear do pé para evitar deslizamento. Adaptado em amplitudes baixas.
+- [Kovar, Gleicher e Schreiner, Footskate Cleanup](https://graphics.cs.wisc.edu/Papers/2002/KSG02/cleanup.pdf):
+  importância de preservar as restrições de apoio. O código usa IK analítica
+  própria para duas articulações; não implementa o algoritmo de edição de mocap.
+- [Moussaïd et al., PLOS ONE](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0010047):
+  organização lado a lado em grupos. Inspira a raiz e o espaçamento comuns dos
+  casais, sem simular toda a dinâmica social descrita no artigo.
+
+Anatomia e gestos acrescentam dois arrays de uniforms. Os lotes passaram a 28
+figuras: nove arrays de 28 `vec4` + viewport somam 253 vetores no vertex shader.
+Continuam dois desenhos no desktop e um na versão estreita, no mesmo contexto,
+sem novas texturas ou passes. Layout e escolha das roupas ficam em cache entre
+redimensionamentos. O shader real compilou no Chromium do preview; a validação
+não estabelece 60 fps nem compatibilidade física com Safari ou celulares.
+
+### Densidade e glitch — 05/11/2026
+
+A população passou de 35 para 56 figuras no desktop e de 20 para 28 abaixo de
+600 px. As figuras ficaram 25% maiores; sete faixas ocupam uma área superior
+mais alta, com a mesma exclusão medida do formulário. Cada recepção tem três
+pulsos separados, de 0,38/0,30/0,24 unidades do relógio local, em vez dos dois
+pulsos de 0,18/0,14. O deslocamento das faixas passou de 0,065 para 0,24 unidades
+da figura, com três cortes mais largos e pigmento nas regiões deslocadas.
+Não há flash sobre a página; movimento reduzido continua sem sinais/glitch.
+
+Os uniforms conservam capacidade de 35 figuras por lote. Desktop usa dois
+desenhos instanciados (35 + 21), e a versão estreita usa um (28), compartilhando
+um contexto e um programa. Isso aumenta a área desenhada e o trabalho de poses;
+o limite de buffer permanece em 1,2 milhão de pixels. Os testes cobrem upload
+dentro do lote, três pulsos distintos, marcha, pausas e espaçamento na mesma faixa.
+
+### Revisão humanoide — 05/11/2026
+
+As figuras agora têm ombros e cintura definidos, cabeça/colo separados,
+cotovelos, antebraços, mãos e pernas afuniladas. O foco foi reduzido nas figuras
+próximas para conservar a articulação, mantendo suavidade nas faixas distantes.
+O tronco conserva um movimento rígido e o balanço dos braços continua contido.
+
+`sampleNicknamePose` adapta os três perfis de apoio da tela de link expirado:
+apoio de 60%, 66% e 58% do ciclo, elevação do pé em balanço, transição contínua
+de velocidade e rotação de calcanhar/ponta. São figuras vistas de lado, portanto
+altura e rotação foram adaptadas; a tela expirada e seu renderer não mudaram.
+Dois segmentos de comprimento constante resolvem cada joelho. A altura comum
+da pelve permite estender a perna de apoio sem uma postura agachada permanente.
+Figuras pequenas aumentam a cadência quando necessário para acompanhar a faixa
+sem esticar ossos ou deslizar o pé.
+
+Pés, joelhos e rotação são calculados por figura na CPU e enviados em três novos
+arrays de `vec4`. O desenho continua instanciado, numa chamada, com 35/20 figuras
+e o mesmo limite de resolução. Sete arrays de 35 `vec4` e o viewport somam 246
+vetores no vertex shader. O formulário e as sequências de recepção/pausa/cor
+permanecem. Não foram adicionados modelos, texturas ou passes.
+
+Novos testes verificam apoio sem deslizamento, velocidade contínua no contato,
+perna oposta em apoio, orientação dos joelhos e comprimentos constantes de coxa
+e canela em retrato, paisagem, desktop e QHD/4K. A pausa também congela a pose
+real enviada ao shader, além da raiz e do relógio. O shader WebGL2 compilou no
+Chromium do preview. Isso não comprova 60 fps, Safari ou telefone físico.
+
 Protótipo de 04/11/2026, após a integração do repositório original. A entrada dedicada, o apelido opcional, o envio de perfil e o carregamento adiado de PeerJS/player foram preservados. A opção de revisão existente é usada; não se acrescenta outra tela ao índice.
 
 ## 1. Performance e viabilidade
